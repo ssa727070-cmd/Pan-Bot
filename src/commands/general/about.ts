@@ -18,7 +18,7 @@ const command: Command = {
           description:
             'Un bot de Discord profesional para moderación, bienvenidas, tickets y registros, creado con TypeScript, discord.js y SQLite.',
           fields: [
-            { name: 'Versión', value: '0.1.0', inline: true },
+            { name: 'Versión', value: '1.1.0', inline: true },
             { name: 'Entorno', value: `Node.js ${process.version}`, inline: true },
             {
               name: 'Tiempo activo',

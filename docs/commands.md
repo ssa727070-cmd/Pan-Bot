@@ -1,6 +1,6 @@
-# Referencia de comandos — PAN BOT
+# Referencia de comandos — PAN BOT v1.1.0
 
-Todos los comandos son slash commands. Las respuestas y los errores están en español. Los comandos marcados con 🔒 requieren permisos de gestión y están restringidos por defecto a quienes tienen `Manage Guild`, `Manage Channels` o el permiso indicado.
+24 comandos disponibles. Todos son slash commands. Las respuestas y los errores están en español. Los comandos marcados con 🔒 requieren permisos de gestión y están restringidos por defecto a quienes tienen `Manage Guild`, `Manage Channels` o el permiso indicado.
 
 ## General
 
@@ -94,9 +94,73 @@ Ejemplo: `¡Bienvenido {user} a {server}! Ya somos {memberCount} miembros.`
 
 Las acciones de moderación usan preferentemente el canal configurado con `/settings modlog` y, si no existe, el evento `moderation`. Los transcriptos de tickets se envían al canal de moderación o al evento `ticket`.
 
+## Roles automáticos (🔒 `Manage Guild`)
+
+| Comando                  | Descripción                                                 | Opciones                                                                           |
+| ------------------------ | ----------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `/autorole setup`        | Activa los roles de entrada.                                | `bots` (opc.; incluir bots, por defecto `false`)                                   |
+| `/autorole add`          | Añade un rol de entrada (varios permitidos).                | `rol`                                                                              |
+| `/autorole remove`       | Quita un rol de entrada.                                    | `rol`                                                                              |
+| `/autorole list`         | Muestra estado, roles y paneles.                            | —                                                                                  |
+| `/autorole disable`      | Desactiva los roles de entrada sin borrar la configuración. | —                                                                                  |
+| `/autorole panel-create` | Publica un panel vacío y devuelve su ID.                    | `canal`, `titulo`, `descripcion` (opc.), `limite` (1–10, opc.)                     |
+| `/autorole panel-edit`   | Añade/quita un rol del panel y refresca el mensaje.         | `panel`, `rol`, `accion` (`add`/`remove`), `etiqueta` (opc.), `descripcion` (opc.) |
+| `/autorole panel-delete` | Elimina el panel y su mensaje.                              | `panel`                                                                            |
+
+> Discord prohíbe mezclar subcomandos y grupos de subcomandos en el mismo nivel; por eso las acciones de panel son subcomandos planos `panel-*` y no `/autorole panel …`.
+
+Consulta [docs/features/autoroles.md](features/autoroles.md).
+
+## Estadísticas
+
+| Comando           | Descripción                                                    | Opciones                                                              |
+| ----------------- | -------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `/stats`          | Muestra datos en vivo e históricos.                            | —                                                                     |
+| `/stats members`  | Miembros, humanos y bots en vivo.                              | —                                                                     |
+| `/stats activity` | Entradas, salidas, mensajes y actividad de los últimos 7 días. | —                                                                     |
+| `/stats setup`    | Configura un canal contador (🔒 `Manage Guild`).               | `canal`, `metrica` (`members`, `humans`, `bots`, `total`, `messages`) |
+| `/stats channels` | Lista los contadores configurados.                             | —                                                                     |
+| `/stats disable`  | Quita todos los contadores (🔒 `Manage Guild`).                | —                                                                     |
+
+Consulta [docs/features/statistics.md](features/statistics.md).
+
+## Sugerencias
+
+| Comando                | Descripción                                                        | Opciones                                             |
+| ---------------------- | ------------------------------------------------------------------ | ---------------------------------------------------- |
+| `/suggest`             | Abre el modal para enviar una sugerencia (10–1000 caracteres).     | —                                                    |
+| `/suggestions setup`   | Define canal y staff, y activa el sistema (🔒 `Manage Guild`).     | `canal`, `staff` (opc.)                              |
+| `/suggestions config`  | Activa/desactiva o cambia etiquetas de estado (🔒 `Manage Guild`). | `activar` (opc.), `estado` (opc.), `etiqueta` (opc.) |
+| `/suggestions view`    | Muestra una sugerencia y sus votos.                                | `id`                                                 |
+| `/suggestions status`  | Cambia el estado y añade una respuesta (staff).                    | `id`, `estado`, `respuesta` (opc.)                   |
+| `/suggestions disable` | Desactiva `/suggest` (🔒 `Manage Guild`).                          | —                                                    |
+
+Estados: `pending` (reabrir), `approved`, `rejected`, `implemented`. Consulta [docs/features/suggestions.md](features/suggestions.md).
+
+## AutoMod (🔒 `Manage Guild`)
+
+| Comando               | Descripción                                           | Opciones                                                                                |
+| --------------------- | ----------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `/automod setup`      | Activa AutoMod y configura acciones y reglas nativas. | `nativo`, `eliminar`, `advertir`, `repetidos`, `silenciar` (0–1440), `registrar` (opc.) |
+| `/automod status`     | Muestra filtros, acciones y exenciones.               | —                                                                                       |
+| `/automod enable`     | Activa los filtros conservando la configuración.      | —                                                                                       |
+| `/automod disable`    | Desactiva los filtros conservando la configuración.   | —                                                                                       |
+| `/automod spam`       | Umbrales de frecuencia, idénticos y menciones.        | `activo`, `ventana`, `max_mensajes`, `max_menciones`, `identicos` (opc.)                |
+| `/automod words`      | Gestiona palabras/frases literales bloqueadas.        | `accion` (`add`/`remove`/`list`), `palabra` (opc.)                                      |
+| `/automod links`      | Activa/desactiva el filtro de enlaces.                | `activo`                                                                                |
+| `/automod invites`    | Activa/desactiva el filtro de invitaciones.           | `activo`                                                                                |
+| `/automod mentions`   | Configura menciones masivas.                          | `activo`, `maximo` (opc.)                                                               |
+| `/automod exemptions` | Gestiona roles/canales/usuarios exentos.              | `accion` (`add`/`remove`/`list`), `tipo`, `id` (opc.)                                   |
+| `/automod logs`       | Muestra incidencias o configura su registro.          | `registrar` (opc.)                                                                      |
+
+Consulta [docs/features/automod.md](features/automod.md).
+
 ## Notas sobre permisos
 
-- El bot necesita permisos de **Gestionar canales** para tickets, `/slowmode`, `/lock` y `/unlock`.
-- Necesita **Gestionar mensajes** para `/clear` y para eliminar canales de ticket al cerrarlos.
-- Necesita **Ver canal** y **Enviar mensajes** en cada canal de registro configurado.
+- El bot necesita permisos de **Gestionar canales** para tickets, contadores, `/slowmode`, `/lock` y `/unlock`.
+- Necesita **Gestionar mensajes** para `/clear`, eliminar mensajes de AutoMod y canales de ticket al cerrarlos.
+- Necesita **Gestionar roles** para autoroles y **Moderar miembros** para silencios de AutoMod.
+- Necesita **Gestionar servidor** para reglas nativas de AutoMod; los comandos de configuración lo exigen a quien los ejecuta.
+- Necesita **Ver canal** y **Enviar mensajes** en cada canal de registro, panel, sugerencias y contador configurado.
+- Bitfield de invitación recomendado en v1.1.0: `1078062142` (añade los permisos anteriores a los ya existentes).
 - Los intents privilegiados `Guild Members` y `Message Content` deben activarse en el Developer Portal. Consulta el [README](../README.md#intents-de-la-pasarela-gateway).

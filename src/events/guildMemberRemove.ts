@@ -1,8 +1,10 @@
 import { Events, type GuildMember } from 'discord.js';
+import { logger } from '../core/logger.js';
 import type { PanClient } from '../core/client.js';
 import { GuildSettingsRepository } from '../database/repositories/guildSettings.js';
 import { sendGoodbye } from '../features/welcome.js';
 import { notifyLogEvent } from '../logging/logService.js';
+import { recordLeave, refreshStatsChannels } from '../statistics/service.js';
 import type { BotEvent } from '../types/event.js';
 
 const event: BotEvent = {
@@ -14,6 +16,13 @@ const event: BotEvent = {
     const settings = new GuildSettingsRepository(client.db.sqlite).get(guild.id);
 
     await sendGoodbye(client, member.user, guild, settings);
+
+    try {
+      recordLeave(client, guild.id);
+      void refreshStatsChannels(client, guild.id, { guild, force: true });
+    } catch (error) {
+      logger.warn({ error, guildId: guild.id }, 'Could not record leave statistics');
+    }
 
     await notifyLogEvent(client, guild.id, 'member_leave', 'Miembro salió', [
       { name: 'Miembro', value: `<@${member.id}> (${member.user.tag})`, inline: false },

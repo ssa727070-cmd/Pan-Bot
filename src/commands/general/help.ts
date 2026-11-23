@@ -9,6 +9,10 @@ const categoryTitles: Record<CommandCategory, string> = {
   welcome: '👋 Bienvenidas',
   tickets: '🎫 Tickets',
   logging: '📝 Registros',
+  autoroles: '🎭 Roles automáticos',
+  statistics: '📊 Estadísticas',
+  suggestions: '💡 Sugerencias',
+  automod: '🛡️ AutoMod',
 };
 
 const command: Command = {

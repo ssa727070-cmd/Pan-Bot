@@ -25,6 +25,7 @@ function registerShutdownHandlers(client: PanClient): void {
     shuttingDown = true;
     logger.info({ signal }, 'Shutting down PAN BOT');
 
+    if (client.statsTimer) clearInterval(client.statsTimer);
     client.destroy();
     client.db.close();
 

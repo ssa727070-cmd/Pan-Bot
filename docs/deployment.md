@@ -31,12 +31,12 @@ Los pasos que requieren tu cuenta están marcados con ✋.
 
 ### Intents solicitados por el código
 
-| Intent                | Privilegiado | Funciones que lo necesitan                                   |
-| --------------------- | ------------ | ------------------------------------------------------------ |
-| `Guilds`              | No           | Comandos, roles, canales y miembros                          |
-| `Guild Messages`      | No           | Logs de edición/borrado de mensajes, `/clear`                |
-| **`Guild Members`**   | **Sí**       | `/ban`, `/kick`, `/timeout`, jerarquía de roles, bienvenidas |
-| **`Message Content`** | **Sí**       | Contenido en logs y transcripción de tickets                 |
+| Intent                | Privilegiado | Funciones que lo necesitan                                      |
+| --------------------- | ------------ | --------------------------------------------------------------- |
+| `Guilds`              | No           | Comandos, roles, canales y miembros                             |
+| `Guild Messages`      | No           | Logs de edición/borrado, `/clear`, AutoMod, actividad           |
+| **`Guild Members`**   | **Sí**       | `/ban`, `/kick`, `/timeout`, jerarquía, autoroles, estadísticas |
+| **`Message Content`** | **Sí**       | Logs, transcripción de tickets y detección de AutoMod           |
 
 ---
 
@@ -53,10 +53,10 @@ Extrae el ZIP en tu equipo y comprueba que contiene `package.json`, `package-loc
 URL de invitación (scopes `bot` + `applications.commands`, permisos ya existentes):
 
 ```text
-https://discord.com/oauth2/authorize?client_id=TU_APPLICATION_ID&permissions=1101662383126&scope=bot%20applications.commands
+https://discord.com/oauth2/authorize?client_id=TU_APPLICATION_ID&permissions=1078062142&scope=bot%20applications.commands
 ```
 
-Sustituye `TU_APPLICATION_ID` por el Application ID del paso 1. El bitfield `1101662383126` es el que ya usaba el bot; no es necesario reinvitarlo si sigue en el servidor.
+Sustituye `TU_APPLICATION_ID` por el Application ID del paso 1. El bitfield **`1078062142`** incluye `Manage Roles`, `Manage Guild`, `Moderate Members` y `Use Application Commands`, necesarios en v1.1.0. Si el bot ya está en el servidor con el bitfield anterior `1101662383126`, puedes conceder esos permisos manualmente en lugar de reinvitarlo.
 
 ---
 
@@ -97,7 +97,7 @@ Añádelas en la pestaña **Environment Variables / Variables de entorno** del p
 
 ## 6. Migraciones y arranque
 
-Las migraciones se aplican **automáticamente** al abrir la base de datos (`PanDatabase` ejecuta `001_initial_schema` y `002_moderation_welcome_tickets_logging` una sola vez y registra los IDs en `schema_migrations`). No hay que ejecutar nada adicional, pero existe `npm run db:migrate` como comando explícito.
+Las migraciones se aplican **automáticamente** al abrir la base de datos (`PanDatabase` ejecuta `001_initial_schema`, `002_moderation_welcome_tickets_logging` y `003_autoroles_statistics_suggestions_automod` una sola vez y registra los IDs en `schema_migrations`). No hay que ejecutar nada adicional, pero existe `npm run db:migrate` como comando explícito. La migración `003` es aditiva: crea tablas nuevas y no modifica ni borra los datos de versiones anteriores.
 
 Secuencia recomendada en el panel, la primera vez:
 
@@ -132,7 +132,7 @@ Para comprobar el payload sin llamar a Discord:
 npm run commands:preview
 ```
 
-Escribe `data/commands.json` con los **19 comandos** actuales. Vuelve a ejecutar el despliegue siempre que cambie el conjunto de comandos, para que Discord deje de mostrar entradas obsoletas.
+Escribe `data/commands.json` con los **24 comandos** actuales. Vuelve a ejecutar el despliegue siempre que cambie el conjunto de comandos, para que Discord deje de mostrar entradas obsoletas.
 
 ---
 
@@ -145,9 +145,16 @@ Escribe `data/commands.json` con los **19 comandos** actuales. Vuelve a ejecutar
 /goodbye setup canal:#despedidas
 /ticket setup soporte:@Soporte categoria:CategoriaTickets panel:#tickets
 /ticket panel canal:#tickets
+/autorole setup bots:false
+/autorole add rol:@Miembro
+/autorole panel-create canal:#roles titulo:"Elige tus roles" limite:2
+/stats setup canal:"Contador" metrica:members
+/suggestions setup canal:#sugerencias staff:@Staff
+/automod setup nativo:false eliminar:true advertir:true silenciar:0 registrar:true
+/automod spam ventana:10 max_mensajes:6 identicos:true
 ```
 
-Verifica con `/settings view`, `/logs view` y `/help`. La referencia completa está en [docs/commands.md](commands.md).
+Verifica con `/settings view`, `/logs view`, `/autorole list`, `/stats channels`, `/suggestions config` y `/automod status`. La referencia completa está en [docs/commands.md](commands.md) y las guías detalladas en [docs/features/](features/).
 
 ---
 
@@ -165,17 +172,17 @@ npm run healthcheck
 npm run commands:preview
 ```
 
-`healthcheck` valida configuración, migraciones, carga de comandos y eventos **sin conectar a Discord**. `commands:preview` valida los 19 comandos sin llamadas a la API.
+`healthcheck` valida configuración, migraciones, carga de comandos y eventos **sin conectar a Discord**. `commands:preview` valida los 24 comandos sin llamadas a la API.
 
 En Wispbyte, comprueba:
 
 | Comprobación | Resultado esperado                                                                        |
 | ------------ | ----------------------------------------------------------------------------------------- |
-| Arranque     | Logs con `Slash commands loaded` (19), `Discord events loaded` (14) y `PAN BOT is online` |
+| Arranque     | Logs con `Slash commands loaded` (24), `Discord events loaded` (15) y `PAN BOT is online` |
 | Intents      | Sin errores `Used disallowed intents`                                                     |
 | `/ping`      | Responde con la latencia                                                                  |
-| `/help`      | Lista 19 comandos                                                                         |
-| Persistencia | Tras reiniciar, `/warnings` y la configuración siguen ahí                                 |
+| `/help`      | Lista 24 comandos en 10 categorías                                                        |
+| Persistencia | Tras reiniciar, `/warnings`, paneles, sugerencias y contadores siguen ahí                 |
 
 > Si aparece `Used disallowed intents`, vuelve a activar **SERVER MEMBERS INTENT** y **MESSAGE CONTENT INTENT** en el Developer Portal.
 
@@ -185,4 +192,4 @@ En Wispbyte, comprueba:
 
 - El ZIP no incluye secretos; `.env`, `data/`, `dist/`, `node_modules/` y los archivos de claves están excluidos del repositorio y del paquete.
 - Configura el token solo como variable de entorno en Wispbyte. No lo escribas en archivos versionados ni lo pegues en tickets o chats.
-- No se ha hecho commit, push ni despliegue desde este equipo como parte de esta preparación.
+- La publicación en GitHub y la creación del release se hacen manualmente tras verificar los cambios; no se inicia ninguna instancia adicional del bot.

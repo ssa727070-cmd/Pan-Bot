@@ -8,7 +8,16 @@ import type {
 import type { PanClient } from '../core/client.js';
 
 export type CommandCategory =
-  'general' | 'configuration' | 'moderation' | 'welcome' | 'tickets' | 'logging';
+  | 'general'
+  | 'configuration'
+  | 'moderation'
+  | 'welcome'
+  | 'tickets'
+  | 'logging'
+  | 'autoroles'
+  | 'statistics'
+  | 'suggestions'
+  | 'automod';
 
 /** Contract shared by every slash command in src/commands. */
 export interface Command {

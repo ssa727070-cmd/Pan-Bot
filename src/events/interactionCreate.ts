@@ -9,8 +9,13 @@ import {
   TICKET_TOPIC_INPUT,
   TICKET_TOPIC_MODAL,
 } from '../tickets/constants.js';
+import { handlePanelButton } from '../autoroles/service.js';
+import { parsePanelCustomId } from '../autoroles/constants.js';
+import { parseVoteCustomId, SUGGEST_MODAL, SUGGEST_TEXT_INPUT } from '../suggestions/constants.js';
+import { handleVote, publishSuggestion } from '../suggestions/service.js';
 import type { BotEvent } from '../types/event.js';
 import { errorEmbed } from '../utils/embeds.js';
+import { suggestionText } from '../validation/config.js';
 
 async function fail(interaction: Interaction, description: string): Promise<void> {
   const embed = errorEmbed(description);
@@ -60,6 +65,16 @@ const event: BotEvent = {
           await closeTicket(client, interaction);
           return;
         }
+        const panel = parsePanelCustomId(interaction.customId);
+        if (panel) {
+          await handlePanelButton(client, interaction, panel.panelId, panel.roleId);
+          return;
+        }
+        const vote = parseVoteCustomId(interaction.customId);
+        if (vote) {
+          await handleVote(client, interaction, vote.id, vote.action);
+          return;
+        }
       } catch (error) {
         logger.error({ error, customId: interaction.customId }, 'Falló el botón de interacción');
         await fail(interaction, 'No se pudo completar la acción. Inténtalo de nuevo.');
@@ -73,6 +88,20 @@ const event: BotEvent = {
         if (interaction.customId === TICKET_TOPIC_MODAL) {
           const topic = interaction.fields.getTextInputValue(TICKET_TOPIC_INPUT);
           await openTicket(client, interaction, topic);
+          return;
+        }
+        if (interaction.customId === SUGGEST_MODAL) {
+          const parsed = suggestionText.safeParse(
+            interaction.fields.getTextInputValue(SUGGEST_TEXT_INPUT),
+          );
+          if (!parsed.success) {
+            await interaction.reply({
+              embeds: [errorEmbed('La sugerencia debe tener entre 10 y 1000 caracteres.')],
+              ephemeral: true,
+            });
+            return;
+          }
+          await publishSuggestion(client, interaction, parsed.data);
         }
       } catch (error) {
         logger.error({ error, customId: interaction.customId }, 'Falló el formulario');
