@@ -1,5 +1,4 @@
-import { Client, Collection, GatewayIntentBits } from 'discord.js';
-import type { LavalinkManager } from 'lavalink-client';
+import { Client, Collection, GatewayIntentBits, Partials } from 'discord.js';
 import type { PanDatabase } from '../database/client.js';
 import type { Command } from '../types/command.js';
 
@@ -7,13 +6,18 @@ import type { Command } from '../types/command.js';
 export class PanClient extends Client {
   public readonly commands = new Collection<string, Command>();
   public readonly cooldowns = new Collection<string, Collection<string, number>>();
-  public lavalink!: LavalinkManager;
   public db!: PanDatabase;
   public startedAt = new Date();
 
   public constructor() {
     super({
-      intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates],
+      intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMembers,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent,
+      ],
+      partials: [Partials.Message, Partials.Channel],
     });
   }
 }

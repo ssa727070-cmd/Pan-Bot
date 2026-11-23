@@ -1,125 +1,139 @@
 # PAN BOT
 
-A professional, production-ready Discord music bot built with **TypeScript**, **discord.js v14**, **Lavalink v4**, **SQLite** and **slash commands**.
+Un bot de Discord profesional y listo para producción, creado con **TypeScript**, **discord.js v14**, **SQLite** y **comandos de barra diagonal (slash commands)**. No depende de Docker ni de servicios externos.
 
-## Features
+## Características
 
-- Slash commands with autocomplete, per-command cooldowns and centralised error handling.
-- Music playback through Lavalink: play (search/URL/playlist), pause, resume, skip, stop, queue, now playing, seek, volume, loop, shuffle and disconnect.
-- Automatic "now playing" announcements in the text channel that requested the track.
-- Per-guild configuration persisted in SQLite (DJ role, dedicated music channel, default volume).
-- Versioned, transactional SQLite migrations.
-- Typed environment configuration (fail fast on missing/invalid values).
-- Structured logging with pino, graceful shutdown and unit tests.
-- Docker Compose setup for the Lavalink node and GitHub Actions CI.
+- **Moderación:** 11 comandos (`ban`, `unban`, `kick`, `timeout`, `untimeout`, `warn`, `warnings`, `clear`, `slowmode`, `lock`, `unlock`) con validación de permisos y jerarquía de roles.
+- **Advertencias persistentes** en SQLite con consulta por miembro.
+- **Bienvenidas y despedidas** con canales configurables, mensajes personalizados, placeholders y embeds con color propio.
+- **Sistema de tickets** con panel interactivo, canales privados, reclamación, cierre, transcripción y gestión de participantes.
+- **Registros (logs) configurables** de entradas/salidas, mensajes editados/borrados, canales, roles, baneos, moderación y tickets.
+- Configuración por servidor persistida en SQLite con migraciones versionadas y transaccionales.
+- Configuración de entorno tipada (falla rápido si faltan valores), logging estructurado con pino y apagado graceful.
+- Descubrimiento automático de comandos y eventos, cooldowns por comando y manejo centralizado de errores.
+- CI de GitHub Actions, healthcheck y pruebas unitarias.
 
-## Requirements
+## Requisitos
 
-- Node.js **18.18+** (Node **22 LTS** recommended — see `.nvmrc`; Node 18 is end-of-life).
-- npm 9+.
-- A Discord bot application (token + application ID) with the `applications.commands` and `bot` scopes.
-- A Lavalink v4 node (Docker Compose config included) with the YouTube plugin.
-- Optional: Docker + Docker Compose for running Lavalink locally.
+- **Node.js 22 LTS** (ver `.nvmrc`) y npm 10+.
+- Una aplicación de bot de Discord con token y Application ID, con los scopes `applications.commands` y `bot`.
+- Almacenamiento persistente para el archivo SQLite (en Wispbyte, usa una ruta dentro del volumen persistente del contenedor).
 
-Required Discord gateway intents: **Guilds** and **Guild Voice States** (neither is privileged).
+### Intents de la pasarela (Gateway)
 
-## Quick start
+El bot solicita estos intents; **los dos marcados como privilegiados** deben activarse en _Discord Developer Portal → Bot → Privileged Gateway Intents_:
 
-```bash
-cd ~/Proyectos/PanBot
-npm ci                         # install dependencies
-cp .env.example .env           # then edit .env with your token and IDs
-npm run db:migrate             # create/upgrade the SQLite database
-docker compose up -d lavalink  # start Lavalink (or use an existing node)
-npm run commands:deploy        # register slash commands with Discord
-npm run dev                    # start the bot with hot reload
-```
+| Intent                | Privilegiado | Uso                                                                   |
+| --------------------- | ------------ | --------------------------------------------------------------------- |
+| `Guilds`              | No           | Comandos, roles, canales y miembros                                   |
+| `Guild Messages`      | No           | Registro de mensajes editados/borrados y limpieza                     |
+| **`Guild Members`**   | **Sí**       | Jerarquía de roles en moderación y eventos de miembros                |
+| **`Message Content`** | **Sí**       | Leer el contenido de mensajes para la transcripción de tickets y logs |
 
-Production:
+Los permisos de invitación que necesita el bot son `Manage Channels`, `Manage Messages`, `Moderate Members`, `Ban Members`, `Kick Members`, `View Channel`, `Send Messages`, `Read Message History`, `Embed Links`, `Attach Files` y `Use Application Commands`. El bitfield ya existente `1101662383126` sigue siendo válido: incluye además permisos de voz que ya no son necesarios, pero no obligan a reinvitar al bot. Consulta [docs/deployment.md](docs/deployment.md#3-invitar-el-bot-al-servidor).
+
+## Inicio rápido
 
 ```bash
+npm ci
+cp .env.example .env           # rellena token y Application ID; nunca subas .env
 npm run build
 npm start
 ```
 
-Never commit `.env`, bot tokens, database files or private keys.
+Para desarrollo con recarga automática: `npm run dev`.
 
-## Environment variables
+Los comandos slash se registran una sola vez con `npm run commands:deploy`. Antes puedes validar el payload sin llamar a Discord con `npm run commands:preview`.
 
-| Variable            | Required | Default              | Purpose                                                   |
-| ------------------- | -------- | -------------------- | --------------------------------------------------------- |
-| `DISCORD_TOKEN`     | yes      | —                    | Bot token from the Discord Developer Portal               |
-| `DISCORD_CLIENT_ID` | yes      | —                    | Application (client) ID                                   |
-| `DISCORD_GUILD_ID`  | no       | —                    | Register commands in one guild instantly while developing |
-| `NODE_ENV`          | no       | `development`        | `development`, `production` or `test`                     |
-| `LOG_LEVEL`         | no       | `info`               | pino log level                                            |
-| `DATABASE_PATH`     | no       | `data/panbot.sqlite` | SQLite file path                                          |
-| `LAVALINK_HOST`     | no       | `127.0.0.1`          | Lavalink node host                                        |
-| `LAVALINK_PORT`     | no       | `2333`               | Lavalink node port                                        |
-| `LAVALINK_PASSWORD` | no       | `youshallnotpass`    | Must match `lavalink/application.yml`                     |
-| `LAVALINK_SECURE`   | no       | `false`              | Use TLS for the node connection                           |
-| `DEFAULT_VOLUME`    | no       | `80`                 | Default player volume (0–100)                             |
-| `MAX_QUEUE_SIZE`    | no       | `500`                | Maximum queued tracks per guild                           |
-| `EMBED_COLOR`       | no       | `5865F2`             | Brand colour (six hex digits, no `#`)                     |
+## Variables de entorno
+
+| Variable            | Requerida | Valor por defecto    | Uso                                                       |
+| ------------------- | --------- | -------------------- | --------------------------------------------------------- |
+| `DISCORD_TOKEN`     | sí        | —                    | Token del bot del Developer Portal                        |
+| `DISCORD_CLIENT_ID` | sí        | —                    | Application ID                                            |
+| `DISCORD_GUILD_ID`  | no        | —                    | Registrar comandos solo en un servidor durante desarrollo |
+| `NODE_ENV`          | no        | `development`        | `development`, `production` o `test`                      |
+| `LOG_LEVEL`         | no        | `info`               | Nivel de pino                                             |
+| `DATABASE_PATH`     | no        | `data/panbot.sqlite` | Ruta del archivo SQLite                                   |
+| `EMBED_COLOR`       | no        | `5865F2`             | Color de marca (6 dígitos hexadecimales, sin `#`)         |
 
 ## Scripts
 
-| Script                                    | Description                                                         |
-| ----------------------------------------- | ------------------------------------------------------------------- |
-| `npm run dev`                             | Run with `tsx watch` (hot reload)                                   |
-| `npm run build`                           | Compile TypeScript into `dist/`                                     |
-| `npm start`                               | Run the compiled bot                                                |
-| `npm run typecheck`                       | Type-check without emitting files                                   |
-| `npm run lint` / `npm run lint:fix`       | ESLint checks                                                       |
-| `npm run format` / `npm run format:check` | Prettier formatting                                                 |
-| `npm test`                                | Run unit tests                                                      |
-| `npm run commands:deploy`                 | Register slash commands (guild-scoped if `DISCORD_GUILD_ID` is set) |
-| `npm run db:migrate`                      | Apply pending SQLite migrations                                     |
+| Script                                    | Descripción                                                                     |
+| ----------------------------------------- | ------------------------------------------------------------------------------- |
+| `npm run dev`                             | Ejecutar con `tsx watch` (recarga automática)                                   |
+| `npm run clean`                           | Borrar `dist/` para evitar artefactos obsoletos                                 |
+| `npm run build`                           | Limpiar `dist/` y compilar TypeScript                                           |
+| `npm start`                               | Ejecutar el bot compilado (`node dist/index.js`)                                |
+| `npm run typecheck`                       | Comprobar tipos sin emitir archivos                                             |
+| `npm run lint` / `npm run lint:fix`       | Comprobaciones de ESLint                                                        |
+| `npm run format` / `npm run format:check` | Formato con Prettier                                                            |
+| `npm test`                                | Ejecutar pruebas unitarias                                                      |
+| `npm run healthcheck`                     | Verificar configuración, migraciones, comandos y eventos sin conectar a Discord |
+| `npm run commands:preview`                | Validar y guardar los 19 comandos en `data/commands.json` sin llamar a Discord  |
+| `npm run commands:deploy`                 | Registrar comandos slash en Discord                                             |
+| `npm run db:migrate`                      | Comprobar/aplicar migraciones pendientes de SQLite                              |
 
-## Project structure
+## Estructura del proyecto
 
 ```text
 PanBot/
 ├── src/
-│   ├── index.ts                 # Bootstrap, login and graceful shutdown
-│   ├── config/env.ts            # Zod-validated environment
-│   ├── core/                    # Discord client, Lavalink manager, logger
+│   ├── index.ts                 # Arranque, login y apagado graceful
+│   ├── config/env.ts            # Entorno validado con Zod
+│   ├── core/                    # Cliente Discord y logger
 │   ├── commands/
 │   │   ├── general/             # ping, help, about
-│   │   ├── music/               # play, pause, resume, skip, stop, queue, ...
-│   │   └── configuration/       # settings (DJ role, channel, volume)
-│   ├── events/                  # ready, interactionCreate, raw packet forwarding
-│   ├── handlers/                # Automatic command/event loaders
-│   ├── music/                   # Player helpers and Lavalink event handlers
-│   ├── database/                # SQLite connection, migrations, repositories
-│   ├── scripts/                 # Command deployment and migration CLI
-│   ├── types/                   # Shared command/event contracts
-│   └── utils/                   # Embeds and formatting helpers (+ tests)
-├── lavalink/application.yml     # Lavalink v4 + YouTube plugin configuration
-├── docker-compose.yml           # Lavalink service
-├── .github/workflows/ci.yml     # Typecheck, lint, test and build on CI
-├── .env.example
-└── data/                        # Ignored: SQLite files live here
+│   │   ├── configuration/       # settings
+│   │   ├── moderation/          # ban, kick, timeout, warn, clear, ...
+│   │   ├── welcome/             # welcome, goodbye
+│   │   ├── tickets/             # ticket
+│   │   └── logging/             # logs
+│   ├── events/                  # interacciones, miembros, mensajes, canales, roles, baneos
+│   ├── features/                # bienvenidas y plantillas de mensajes
+│   ├── handlers/                # cargadores automáticos de comandos y eventos
+│   ├── logging/                 # eventos configurables y servicio de registros
+│   ├── moderation/              # validación de permisos y formato
+│   ├── tickets/                 # panel, servicio, transcripción y formato
+│   ├── database/                # conexión, migraciones y repositorios
+│   ├── scripts/                 # despliegue de comandos, migraciones y healthcheck
+│   ├── types/                   # contratos compartidos
+│   └── utils/                   # embeds, formato, canales, errores (+ pruebas)
+├── docs/commands.md             # Referencia completa de comandos
+├── docs/deployment.md           # Despliegue en Wispbyte
+├── .github/workflows/ci.yml     # Verificación en CI
+└── data/                        # Ignorado: archivos SQLite
 ```
 
-## Adding a command
+## Configuración inicial recomendada
 
-1. Create `src/commands/<category>/<name>.ts`.
-2. Default-export an object implementing `Command` (`data`, `category`, `execute`).
-3. Restart the bot (or let `tsx watch` reload it), then run `npm run commands:deploy`.
+```text
+/settings modlog canal:#moderacion
+/logs setup canal:#logs
+/welcome setup canal:#bienvenidas mensaje:"¡Bienvenido {user} a {server}! Somos {memberCount}."
+/goodbye setup canal:#despedidas
+/ticket setup soporte:@Soporte categoria:CategoríaTickets panel:#tickets
+/ticket panel canal:#tickets
+```
 
-Commands and events are discovered automatically — no manual registration list to maintain.
+Consulta [docs/commands.md](docs/commands.md) para la referencia completa de comandos, opciones y placeholders. Para el despliegue en Wispbyte, sigue [docs/deployment.md](docs/deployment.md).
 
-## Lavalink
+## Base de datos
 
-The bundled `docker-compose.yml` starts Lavalink v4 on port `2333` and mounts `lavalink/application.yml`. The YouTube source plugin is declared through `lavalink.plugins` and downloaded by Lavalink on first start. Change the password in **both** `.env` and `lavalink/application.yml` before exposing the node publicly. Never expose Lavalink's port to the internet without authentication and TLS.
+Las migraciones son aditivas y se ejecutan una sola vez en orden:
 
-## Security
+1. `001_initial_schema` — configuración de servidor y estadísticas de comandos.
+2. `002_moderation_welcome_tickets_logging` — advertencias, tickets, participantes, ajustes de bienvenidas y configuración de registros.
 
-- `.env`, `data/`, `dist/` and downloaded plugins are gitignored.
-- The private SSH key and Discord tokens must never be committed or shared.
-- CI runs only read-only verification; publishing is a manual, explicitly authorised step.
+Se aplican automáticamente al abrir la base de datos. `npm run db:migrate` es un equivalente explícito. Las columnas/tablas musicales que pudiera tener una base de datos antigua se ignoran y no se eliminan para preservar los datos existentes.
 
-## License
+## Seguridad
 
-MIT — see [LICENSE](LICENSE).
+- `.env`, `data/`, `dist/` y los archivos de claves están excluidos en `.gitignore`.
+- Las claves privadas SSH y los tokens de Discord nunca se suben ni se muestran.
+- CI ejecuta solo verificaciones de lectura; publicar es un paso manual autorizado explícitamente.
+
+## Licencia
+
+MIT — consulta [LICENSE](LICENSE).

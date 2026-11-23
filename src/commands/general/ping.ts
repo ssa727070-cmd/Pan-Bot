@@ -7,7 +7,7 @@ const command: Command = {
   cooldownSeconds: 3,
   data: new SlashCommandBuilder()
     .setName('ping')
-    .setDescription('Check the bot latency and gateway health.'),
+    .setDescription('Comprueba la latencia del bot y la conexión.'),
 
   async execute(interaction, client) {
     await interaction.reply({ embeds: [infoEmbed('🏓 Pinging…')] });
@@ -20,8 +20,8 @@ const command: Command = {
       embeds: [
         successEmbed(
           'Pong!',
-          `**Gateway:** ${Number.isFinite(gateway) ? `${gateway} ms` : 'connecting…'}\n` +
-            `**Round-trip:** ${roundTrip} ms`,
+          `**Gateway:** ${Number.isFinite(gateway) ? `${gateway} ms` : 'conectando…'}\n` +
+            `**Ida y vuelta:** ${roundTrip} ms`,
         ),
       ],
     });

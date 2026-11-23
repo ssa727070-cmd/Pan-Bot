@@ -17,8 +17,15 @@ logs/
 *.log
 npm-debug.log*
 
-# Lavalink plugins are downloaded locally
-lavalink/plugins/*.jar
+# Keys and credentials
+*.pem
+*.key
+id_rsa
+id_rsa.*
+*.ppk
+
+# Deployment archive (generated locally)
+PanBot-Wispbyte.zip
 
 # Editors / OS
 .vscode/

@@ -8,40 +8,13 @@ export interface Migration {
 export const migrations: Migration[] = [
   {
     id: '001_initial_schema',
-    name: 'Guild settings, playlists and command statistics',
+    name: 'Guild settings and command statistics',
     sql: `
       CREATE TABLE IF NOT EXISTS guild_settings (
         guild_id        TEXT PRIMARY KEY,
-        dj_role_id      TEXT,
-        music_channel_id TEXT,
-        default_volume  INTEGER NOT NULL DEFAULT 80 CHECK (default_volume BETWEEN 0 AND 100),
         created_at      TEXT NOT NULL DEFAULT (datetime('now')),
         updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
       );
-
-      CREATE TABLE IF NOT EXISTS playlists (
-        id          INTEGER PRIMARY KEY AUTOINCREMENT,
-        guild_id    TEXT NOT NULL,
-        owner_id    TEXT NOT NULL,
-        name        TEXT NOT NULL,
-        created_at  TEXT NOT NULL DEFAULT (datetime('now')),
-        FOREIGN KEY (guild_id) REFERENCES guild_settings(guild_id) ON DELETE CASCADE,
-        UNIQUE (guild_id, name)
-      );
-
-      CREATE TABLE IF NOT EXISTS playlist_tracks (
-        id          INTEGER PRIMARY KEY AUTOINCREMENT,
-        playlist_id INTEGER NOT NULL,
-        track_uri   TEXT NOT NULL,
-        title       TEXT NOT NULL,
-        author      TEXT,
-        duration_ms INTEGER NOT NULL DEFAULT 0,
-        position    INTEGER NOT NULL DEFAULT 0,
-        FOREIGN KEY (playlist_id) REFERENCES playlists(id) ON DELETE CASCADE
-      );
-
-      CREATE INDEX IF NOT EXISTS idx_playlist_tracks_playlist
-        ON playlist_tracks(playlist_id, position);
 
       CREATE TABLE IF NOT EXISTS command_usage (
         id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -53,6 +26,67 @@ export const migrations: Migration[] = [
 
       CREATE INDEX IF NOT EXISTS idx_command_usage_guild
         ON command_usage(guild_id, command);
+    `,
+  },
+  {
+    id: '002_moderation_welcome_tickets_logging',
+    name: 'Moderation warnings, welcome/goodbye, tickets and logging configuration',
+    sql: `
+      ALTER TABLE guild_settings ADD COLUMN mod_log_channel_id TEXT;
+      ALTER TABLE guild_settings ADD COLUMN welcome_channel_id TEXT;
+      ALTER TABLE guild_settings ADD COLUMN goodbye_channel_id TEXT;
+      ALTER TABLE guild_settings ADD COLUMN welcome_message TEXT;
+      ALTER TABLE guild_settings ADD COLUMN goodbye_message TEXT;
+      ALTER TABLE guild_settings ADD COLUMN embed_color TEXT;
+      ALTER TABLE guild_settings ADD COLUMN log_channel_id TEXT;
+      ALTER TABLE guild_settings ADD COLUMN ticket_panel_channel_id TEXT;
+      ALTER TABLE guild_settings ADD COLUMN ticket_category_id TEXT;
+      ALTER TABLE guild_settings ADD COLUMN ticket_support_role_id TEXT;
+      ALTER TABLE guild_settings ADD COLUMN ticket_counter INTEGER NOT NULL DEFAULT 0;
+
+      CREATE TABLE IF NOT EXISTS warnings (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        guild_id      TEXT NOT NULL,
+        user_id       TEXT NOT NULL,
+        moderator_id  TEXT NOT NULL,
+        reason        TEXT NOT NULL,
+        active        INTEGER NOT NULL DEFAULT 1,
+        created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_warnings_guild_user
+        ON warnings(guild_id, user_id, active);
+
+      CREATE TABLE IF NOT EXISTS tickets (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        guild_id      TEXT NOT NULL,
+        channel_id    TEXT NOT NULL UNIQUE,
+        creator_id    TEXT NOT NULL,
+        claimer_id    TEXT,
+        topic         TEXT,
+        status        TEXT NOT NULL DEFAULT 'open',
+        transcript    TEXT,
+        created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+        closed_at     TEXT
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_tickets_guild
+        ON tickets(guild_id, status);
+
+      CREATE TABLE IF NOT EXISTS ticket_participants (
+        ticket_id     INTEGER NOT NULL,
+        user_id       TEXT NOT NULL,
+        PRIMARY KEY (ticket_id, user_id),
+        FOREIGN KEY (ticket_id) REFERENCES tickets(id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS log_settings (
+        guild_id      TEXT NOT NULL,
+        event_name    TEXT NOT NULL,
+        channel_id    TEXT,
+        enabled       INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (guild_id, event_name)
+      );
     `,
   },
 ];

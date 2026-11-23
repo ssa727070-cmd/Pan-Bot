@@ -2,32 +2,33 @@
   "name": "pan-bot",
   "version": "0.1.0",
   "private": true,
-  "description": "PAN BOT — a professional Discord music bot built with TypeScript, discord.js and Lavalink",
+  "description": "PAN BOT — a production-ready Discord bot for moderation, welcome messages, tickets and logging, built with TypeScript, discord.js and SQLite",
   "type": "module",
   "engines": {
-    "node": ">=18.18.0"
+    "node": ">=22",
+    "npm": ">=10"
   },
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc -p tsconfig.json",
+    "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
+    "build": "npm run clean && tsc -p tsconfig.json",
     "start": "node dist/index.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "test": "tsx --test src/utils/format.test.ts",
+    "test": "tsx --test \"src/**/*.test.ts\"",
     "healthcheck": "tsx src/scripts/healthcheck.ts",
     "commands:deploy": "tsx src/scripts/deployCommands.ts",
+    "commands:preview": "tsx src/scripts/previewCommands.ts",
     "db:migrate": "tsx src/scripts/migrate.ts"
   },
   "keywords": [
     "discord",
     "discord.js",
     "bot",
-    "lavalink",
-    "music",
     "typescript",
     "sqlite"
   ],
@@ -37,7 +38,6 @@
     "better-sqlite3": "^11.10.0",
     "discord.js": "^14.28.1",
     "dotenv": "^16.6.1",
-    "lavalink-client": "^2.11.2",
     "pino": "^9.14.0",
     "zod": "^4.6.7"
   },

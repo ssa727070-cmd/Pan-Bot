@@ -4,19 +4,22 @@ import { createEmbed } from '../../utils/embeds.js';
 
 const categoryTitles: Record<CommandCategory, string> = {
   general: 'General',
-  music: 'Music',
-  configuration: 'Configuration',
+  configuration: '⚙️ Configuración',
+  moderation: '🛡️ Moderación',
+  welcome: '👋 Bienvenidas',
+  tickets: '🎫 Tickets',
+  logging: '📝 Registros',
 };
 
 const command: Command = {
   category: 'general',
   data: new SlashCommandBuilder()
     .setName('help')
-    .setDescription('List all available commands.')
+    .setDescription('Muestra todos los comandos disponibles.')
     .addStringOption((option) =>
       option
-        .setName('command')
-        .setDescription('Get details about a specific command')
+        .setName('comando')
+        .setDescription('Obtén detalles sobre un comando específico')
         .setRequired(false)
         .setAutocomplete(true),
     ),
@@ -24,23 +27,26 @@ const command: Command = {
   async autocomplete(interaction, client) {
     const query = interaction.options.getFocused().toLowerCase();
     const choices = [...client.commands.values()]
-      .filter((command) => command.data.name.includes(query))
+      .filter((cmd) => cmd.data.name.includes(query))
       .slice(0, 25)
-      .map((command) => ({
-        name: `/${command.data.name} — ${command.data.description}`,
-        value: command.data.name,
+      .map((cmd) => ({
+        name: `/${cmd.data.name} — ${cmd.data.description}`,
+        value: cmd.data.name,
       }));
 
     await interaction.respond(choices);
   },
 
   async execute(interaction, client) {
-    const requested = interaction.options.getString('command');
+    const requested = interaction.options.getString('comando');
 
     if (requested) {
       const target = client.commands.get(requested);
       if (!target) {
-        await interaction.reply({ content: 'That command does not exist.', ephemeral: true });
+        await interaction.reply({
+          content: 'Ese comando no existe.',
+          ephemeral: true,
+        });
         return;
       }
 
@@ -55,13 +61,13 @@ const command: Command = {
             title: `/${target.data.name}`,
             description: target.data.description,
             fields: [
-              { name: 'Category', value: categoryTitles[target.category], inline: true },
+              { name: 'Categoría', value: categoryTitles[target.category], inline: true },
               {
-                name: 'Cooldown',
-                value: target.cooldownSeconds ? `${target.cooldownSeconds}s` : 'None',
+                name: 'Tiempo de espera',
+                value: target.cooldownSeconds ? `${target.cooldownSeconds}s` : 'Ninguno',
                 inline: true,
               },
-              ...(optionsText ? [{ name: 'Options', value: optionsText }] : []),
+              ...(optionsText ? [{ name: 'Opciones', value: optionsText }] : []),
             ],
             footer: 'PAN BOT',
           }),
@@ -86,10 +92,10 @@ const command: Command = {
     await interaction.reply({
       embeds: [
         createEmbed({
-          title: 'PAN BOT — Command list',
-          description: `Use \`/help command:<name>\` for details about a command.`,
+          title: 'PAN BOT — Lista de comandos',
+          description: 'Usa `/help comando:<nombre>` para ver los detalles de un comando.',
           fields,
-          footer: `${client.commands.size} commands available`,
+          footer: `${client.commands.size} comandos disponibles`,
         }),
       ],
       ephemeral: true,

@@ -1,9 +1,7 @@
 import { env } from './config/env.js';
 import { PanClient } from './core/client.js';
-import { createLavalinkManager } from './core/lavalink.js';
 import { logger } from './core/logger.js';
 import { PanDatabase } from './database/client.js';
-import { forwardRawPackets } from './events/raw.js';
 import { loadCommands } from './handlers/commandHandler.js';
 import { loadEvents } from './handlers/eventHandler.js';
 
@@ -11,9 +9,7 @@ async function main(): Promise<void> {
   const client = new PanClient();
 
   client.db = new PanDatabase(env.DATABASE_PATH);
-  client.lavalink = createLavalinkManager(client);
 
-  forwardRawPackets(client);
   await loadCommands(client);
   await loadEvents(client);
 
@@ -30,9 +26,6 @@ function registerShutdownHandlers(client: PanClient): void {
     logger.info({ signal }, 'Shutting down PAN BOT');
 
     client.destroy();
-    for (const node of client.lavalink.nodeManager.nodes.values()) {
-      node.destroy('bot shutdown');
-    }
     client.db.close();
 
     process.exit(0);
@@ -51,7 +44,18 @@ function registerShutdownHandlers(client: PanClient): void {
   });
 }
 
+function serializeError(error: unknown): Record<string, unknown> {
+  if (!(error instanceof Error)) return { value: String(error) };
+  return {
+    name: error.name,
+    message: error.message.replace(
+      /[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{30,}/g,
+      '[REDACTED]',
+    ),
+  };
+}
+
 main().catch((error: unknown) => {
-  logger.fatal({ error }, 'Failed to start PAN BOT');
+  logger.fatal({ error: serializeError(error) }, 'Failed to start PAN BOT');
   process.exit(1);
 });

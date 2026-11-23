@@ -9,10 +9,11 @@ export interface EmbedOptions {
   fields?: APIEmbedField[];
   footer?: string;
   thumbnail?: string;
+  color?: number;
 }
 
 export function createEmbed(options: EmbedOptions): EmbedBuilder {
-  const embed = new EmbedBuilder().setColor(brandColor).setTimestamp();
+  const embed = new EmbedBuilder().setColor(options.color ?? brandColor).setTimestamp();
 
   if (options.title) embed.setTitle(options.title);
   if (options.description) embed.setDescription(options.description);
@@ -39,10 +40,18 @@ export function errorEmbed(description: string): EmbedBuilder {
   });
 }
 
+export function warningEmbed(title: string, description?: string): EmbedBuilder {
+  return createEmbed({
+    title: `⚠️ ${title}`,
+    description,
+    footer: 'PAN BOT',
+  });
+}
+
 export function infoEmbed(title: string, description?: string): EmbedBuilder {
   return createEmbed({ title, description, footer: 'PAN BOT' });
 }
 
 export function loadingEmbed(description: string): EmbedBuilder {
-  return createEmbed({ title: '⏳ Please wait…', description, footer: 'PAN BOT' });
+  return createEmbed({ title: '⏳ Espera…', description, footer: 'PAN BOT' });
 }

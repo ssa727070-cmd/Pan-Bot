@@ -18,7 +18,9 @@ async function healthcheck(): Promise<void> {
     throw new Error('No interactionCreate handler was discovered');
   }
 
-  const { count } = client.db.sqlite.prepare('SELECT COUNT(*) AS count FROM schema_migrations').get() as {
+  const { count } = client.db.sqlite
+    .prepare('SELECT COUNT(*) AS count FROM schema_migrations')
+    .get() as {
     count: number;
   };
 
