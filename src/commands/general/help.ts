@@ -13,6 +13,7 @@ const categoryTitles: Record<CommandCategory, string> = {
   statistics: '📊 Estadísticas',
   suggestions: '💡 Sugerencias',
   automod: '🛡️ AutoMod',
+  minecraft: '⛏️ Minecraft',
 };
 
 const command: Command = {

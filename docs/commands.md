@@ -1,6 +1,6 @@
-# Referencia de comandos — PAN BOT v1.1.0
+# Referencia de comandos — PAN BOT v1.1.5
 
-24 comandos disponibles. Todos son slash commands. Las respuestas y los errores están en español. Los comandos marcados con 🔒 requieren permisos de gestión y están restringidos por defecto a quienes tienen `Manage Guild`, `Manage Channels` o el permiso indicado.
+26 comandos disponibles. Todos son slash commands. Las respuestas y los errores están en español. Los comandos marcados con 🔒 requieren permisos de gestión y están restringidos por defecto a quienes tienen `Manage Guild`, `Manage Channels` o el permiso indicado.
 
 ## General
 
@@ -155,6 +155,44 @@ Estados: `pending` (reabrir), `approved`, `rejected`, `implemented`. Consulta [d
 
 Consulta [docs/features/automod.md](features/automod.md).
 
+## Minecraft (v1.1.5)
+
+### `/mc`
+
+| Subcomando                        | Nivel mínimo | Descripción                                                          | Dependencias                                             |
+| --------------------------------- | ------------ | -------------------------------------------------------------------- | -------------------------------------------------------- |
+| `status`                          | readonly     | Estado online/offline, host, versión, software, jugadores y latencia | Ping público; RCON no requerido                          |
+| `players`                         | readonly     | Conteo y nombres visibles                                            | Ping público                                             |
+| `info` / `version`                | readonly     | Información y versión/software detectado                             | Ping público                                             |
+| `kick`                            | moderator    | Expulsa a un jugador                                                 | RCON                                                     |
+| `ban`                             | admin        | Banea a un jugador                                                   | RCON                                                     |
+| `pardon`                          | moderator    | Quita ban                                                            | RCON                                                     |
+| `whitelist (add/remove/list)`     | moderator    | Gestiona whitelist                                                   | RCON                                                     |
+| `op` / `deop`                     | admin        | Gestiona operadores                                                  | RCON                                                     |
+| `mute` / `unmute`                 | moderator    | Silencia/desilencia                                                  | Plugin (EssentialsX/LuckPerms)                           |
+| `time` / `weather` / `difficulty` | moderator    | Cambios de mundo                                                     | RCON                                                     |
+| `gamemode` / `teleport` / `xp`    | moderator    | Gestión de jugadores                                                 | RCON                                                     |
+| `heal` / `feed`                   | moderator    | Curar/alimentar                                                      | EssentialsX                                              |
+| `save`                            | moderator    | Guarda el mundo (`save-all`)                                         | RCON                                                     |
+| `gamerules`                       | moderator    | Consulta/cambia gamerule                                             | RCON                                                     |
+| `message`                         | moderator    | `say`, `broadcast` o `announce` al servidor                          | RCON; `broadcast` puede requerir plugin                  |
+| `command`                         | admin        | Ejecuta comando de consola permitido                                 | RCON + allowlist; confirmación si es mutante/irrestricto |
+
+### `/mcadmin` (🔒 `Manage Guild`)
+
+| Subcomando      | Descripción                                                          |
+| --------------- | -------------------------------------------------------------------- |
+| `setup`         | Activa integración, host/puertos, canales de notificación/auditoría  |
+| `roles`         | Asigna roles Discord a niveles `owner/admin/moderator/readonly`      |
+| `allowlist`     | Añade/quita/lista comandos de consola permitidos con patrón seguro   |
+| `panel`         | Publica panel persistente (overview/status/players/maintenance)      |
+| `notifications` | Configura canal, eventos y intervalo                                 |
+| `maintenance`   | Activa/desactiva mantenimiento con confirmación y whitelist opcional |
+| `console-mode`  | Activa modo consola irrestricto solo para dueño del servidor Discord |
+| `audit`         | Muestra auditoría reciente                                           |
+
+Consulta [docs/features/minecraft.md](features/minecraft.md).
+
 ## Notas sobre permisos
 
 - El bot necesita permisos de **Gestionar canales** para tickets, contadores, `/slowmode`, `/lock` y `/unlock`.
@@ -162,5 +200,6 @@ Consulta [docs/features/automod.md](features/automod.md).
 - Necesita **Gestionar roles** para autoroles y **Moderar miembros** para silencios de AutoMod.
 - Necesita **Gestionar servidor** para reglas nativas de AutoMod; los comandos de configuración lo exigen a quien los ejecuta.
 - Necesita **Ver canal** y **Enviar mensajes** en cada canal de registro, panel, sugerencias y contador configurado.
-- Bitfield de invitación recomendado en v1.1.0: `1078062142` (añade los permisos anteriores a los ya existentes).
+- Bitfield de invitación recomendado: `1078062142`.
 - Los intents privilegiados `Guild Members` y `Message Content` deben activarse en el Developer Portal. Consulta el [README](../README.md#intents-de-la-pasarela-gateway).
+- Minecraft: RCON es opcional; sin `MINECRAFT_RCON_PASSWORD` solo funcionan status/players/info/version. La consola irrestricta está desactivada por defecto, solo la puede activar el dueño del servidor y nunca permite `stop/restart/reload`.

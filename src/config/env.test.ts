@@ -13,6 +13,22 @@ describe('environment configuration', () => {
     assert.equal(env.DISCORD_CLIENT_ID, '123456789012345678');
   });
 
+  it('loads minecraft defaults and accepts valid overrides', async () => {
+    process.env.DISCORD_TOKEN = 'test-token';
+    process.env.DISCORD_CLIENT_ID = '123456789012345678';
+    process.env.MINECRAFT_HOST = 'pansmp.mcserv.world';
+    process.env.MINECRAFT_PORT = '25565';
+    process.env.MINECRAFT_RCON_PORT = '25575';
+    process.env.MINECRAFT_RCON_PASSWORD = '';
+    process.env.MINECRAFT_RCON_TIMEOUT_MS = '5000';
+
+    const { env } = await import(`./env.js?mc=${Date.now()}`);
+    assert.equal(env.MINECRAFT_HOST, 'pansmp.mcserv.world');
+    assert.equal(env.MINECRAFT_PORT, 25565);
+    assert.equal(env.MINECRAFT_RCON_PORT, 25575);
+    assert.equal(env.MINECRAFT_RCON_PASSWORD, '');
+  });
+
   it('does not expose music-only settings', async () => {
     process.env.DISCORD_TOKEN = 'test-token';
     process.env.DISCORD_CLIENT_ID = '123456789012345678';

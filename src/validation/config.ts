@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-/** Shared Zod validation for v1.1.0 feature configuration. All values are bounded to avoid abuse. */
+/** Shared Zod validation for feature configuration. All values are bounded to avoid abuse. */
 
 export const snowflake = z
   .string()

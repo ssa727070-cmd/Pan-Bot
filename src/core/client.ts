@@ -8,6 +8,7 @@ export class PanClient extends Client {
   public readonly cooldowns = new Collection<string, Collection<string, number>>();
   public db!: PanDatabase;
   public statsTimer: NodeJS.Timeout | null = null;
+  public minecraftTimer: NodeJS.Timeout | null = null;
   public startedAt = new Date();
 
   public constructor() {

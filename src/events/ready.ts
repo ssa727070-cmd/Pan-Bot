@@ -4,6 +4,7 @@ import { logger } from '../core/logger.js';
 import { AutomodRepository } from '../database/repositories/automodRepository.js';
 import { syncNativeRules } from '../automod/nativeRules.js';
 import { refreshStatsChannels } from '../statistics/service.js';
+import { startMinecraftMonitor } from '../minecraft/monitor.js';
 import type { BotEvent } from '../types/event.js';
 
 export const STATS_INTERVAL_MS = 15 * 60 * 1000;
@@ -40,6 +41,8 @@ const event: BotEvent = {
       }
     }, STATS_INTERVAL_MS);
     client.statsTimer.unref();
+
+    startMinecraftMonitor(client);
   },
 };
 

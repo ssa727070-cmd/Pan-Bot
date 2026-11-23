@@ -252,4 +252,93 @@ export const migrations: Migration[] = [
         ON automod_incidents(guild_id, created_at);
     `,
   },
+  {
+    id: '004_minecraft_administration',
+    name: 'Minecraft server administration, RCON auditing and monitoring (v1.1.5)',
+    sql: `
+      CREATE TABLE IF NOT EXISTS minecraft_settings (
+        guild_id                  TEXT PRIMARY KEY,
+        enabled                   INTEGER NOT NULL DEFAULT 0,
+        host                      TEXT,
+        query_port                INTEGER,
+        rcon_port                 INTEGER,
+        notification_channel_id   TEXT,
+        audit_channel_id          TEXT,
+        panel_channel_id          TEXT,
+        notify_join               INTEGER NOT NULL DEFAULT 1,
+        notify_leave              INTEGER NOT NULL DEFAULT 1,
+        notify_online             INTEGER NOT NULL DEFAULT 1,
+        notify_offline            INTEGER NOT NULL DEFAULT 1,
+        notify_interval_seconds   INTEGER NOT NULL DEFAULT 60
+                                  CHECK (notify_interval_seconds BETWEEN 30 AND 3600),
+        maintenance_enabled       INTEGER NOT NULL DEFAULT 0,
+        maintenance_message       TEXT NOT NULL DEFAULT 'El servidor está en mantenimiento. Volveremos pronto.',
+        maintenance_whitelist     INTEGER NOT NULL DEFAULT 0,
+        unrestricted_console      INTEGER NOT NULL DEFAULT 0,
+        last_probe_at             INTEGER,
+        updated_at                TEXT NOT NULL DEFAULT (datetime('now')),
+        CHECK (query_port IS NULL OR query_port BETWEEN 1 AND 65535),
+        CHECK (rcon_port IS NULL OR rcon_port BETWEEN 1 AND 65535)
+      );
+
+      CREATE TABLE IF NOT EXISTS minecraft_roles (
+        guild_id  TEXT NOT NULL,
+        level     TEXT NOT NULL CHECK (level IN ('owner', 'admin', 'moderator', 'readonly')),
+        role_id   TEXT NOT NULL,
+        PRIMARY KEY (guild_id, level, role_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_minecraft_roles_guild ON minecraft_roles(guild_id, level);
+
+      CREATE TABLE IF NOT EXISTS minecraft_command_allowlist (
+        guild_id     TEXT NOT NULL,
+        command      TEXT NOT NULL,
+        arg_pattern  TEXT NOT NULL DEFAULT '',
+        created_by   TEXT NOT NULL,
+        created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY (guild_id, command)
+      );
+
+      CREATE TABLE IF NOT EXISTS minecraft_panels (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        guild_id    TEXT NOT NULL,
+        channel_id  TEXT NOT NULL,
+        message_id  TEXT,
+        kind        TEXT NOT NULL CHECK (kind IN ('overview', 'status', 'players', 'players-admin', 'server-admin', 'maintenance')),
+        title       TEXT NOT NULL DEFAULT 'Panel de Minecraft',
+        created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_minecraft_panels_guild ON minecraft_panels(guild_id);
+
+      CREATE TABLE IF NOT EXISTS minecraft_audit_log (
+        id             INTEGER PRIMARY KEY AUTOINCREMENT,
+        guild_id       TEXT NOT NULL,
+        admin_id       TEXT NOT NULL,
+        action         TEXT NOT NULL,
+        target_player  TEXT,
+        command        TEXT,
+        result         TEXT NOT NULL CHECK (result IN ('success', 'failure', 'denied')),
+        error          TEXT,
+        created_at     TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_minecraft_audit_guild
+        ON minecraft_audit_log(guild_id, created_at);
+
+      CREATE TABLE IF NOT EXISTS minecraft_notification_state (
+        guild_id       TEXT NOT NULL,
+        event_key      TEXT NOT NULL,
+        subject        TEXT NOT NULL,
+        fingerprint    TEXT NOT NULL,
+        last_sent_at   TEXT NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY (guild_id, event_key, subject)
+      );
+
+      CREATE TABLE IF NOT EXISTS minecraft_player_state (
+        guild_id      TEXT NOT NULL,
+        player        TEXT NOT NULL,
+        last_seen_at  TEXT NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY (guild_id, player)
+      );
+    `,
+  },
 ];

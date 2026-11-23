@@ -56,7 +56,7 @@ URL de invitación (scopes `bot` + `applications.commands`, permisos ya existent
 https://discord.com/oauth2/authorize?client_id=TU_APPLICATION_ID&permissions=1078062142&scope=bot%20applications.commands
 ```
 
-Sustituye `TU_APPLICATION_ID` por el Application ID del paso 1. El bitfield **`1078062142`** incluye `Manage Roles`, `Manage Guild`, `Moderate Members` y `Use Application Commands`, necesarios en v1.1.0. Si el bot ya está en el servidor con el bitfield anterior `1101662383126`, puedes conceder esos permisos manualmente en lugar de reinvitarlo.
+Sustituye `TU_APPLICATION_ID` por el Application ID del paso 1. El bitfield **`1078062142`** incluye los permisos necesarios para las funciones actuales. Si el bot ya está en el servidor con el bitfield anterior `1101662383126`, puedes conceder los permisos faltantes manualmente.
 
 ---
 
@@ -83,13 +83,19 @@ Añádelas en la pestaña **Environment Variables / Variables de entorno** del p
 
 ### Opcionales (recomendadas)
 
-| Nombre             | Valor recomendado    | Uso                                                                |
-| ------------------ | -------------------- | ------------------------------------------------------------------ |
-| `NODE_ENV`         | `production`         | Activa el logging de producción                                    |
-| `LOG_LEVEL`        | `info`               | Nivel de pino (`fatal`, `error`, `warn`, `info`, `debug`, `trace`) |
-| `DATABASE_PATH`    | `data/panbot.sqlite` | Ruta SQLite; debe estar en almacenamiento persistente              |
-| `DISCORD_GUILD_ID` | vacío                | Vacío = comandos globales; ID de guild = registro instantáneo      |
-| `EMBED_COLOR`      | `5865F2`             | Color hexadecimal de los embeds, sin `#`                           |
+| Nombre                        | Valor recomendado     | Uso                                                                |
+| ----------------------------- | --------------------- | ------------------------------------------------------------------ |
+| `NODE_ENV`                    | `production`          | Activa el logging de producción                                    |
+| `LOG_LEVEL`                   | `info`                | Nivel de pino (`fatal`, `error`, `warn`, `info`, `debug`, `trace`) |
+| `DATABASE_PATH`               | `data/panbot.sqlite`  | Ruta SQLite; debe estar en almacenamiento persistente              |
+| `DISCORD_GUILD_ID`            | vacío                 | Vacío = comandos globales; ID de guild = registro instantáneo      |
+| `EMBED_COLOR`                 | `5865F2`              | Color hexadecimal de los embeds, sin `#`                           |
+| `MINECRAFT_HOST`              | `pansmp.mcserv.world` | Host del servidor Minecraft                                        |
+| `MINECRAFT_PORT`              | `25565`               | Puerto Java/status                                                 |
+| `MINECRAFT_RCON_PORT`         | `25575`               | Puerto RCON                                                        |
+| `MINECRAFT_RCON_PASSWORD`     | vacío si no hay RCON  | Contraseña RCON; nunca la subas a Git                              |
+| `MINECRAFT_RCON_TIMEOUT_MS`   | `5000`                | Timeout RCON                                                       |
+| `MINECRAFT_STATUS_TIMEOUT_MS` | `5000`                | Timeout de status                                                  |
 
 > Para `DATABASE_PATH`, comprueba en el administrador de archivos de Wispbyte que la ruta esté dentro del volumen persistente del contenedor. La aplicación crea automáticamente el directorio padre. Si el panel usa una ruta absoluta persistente (por ejemplo `/home/container/data/panbot.sqlite`), indícala tal cual. **No** apuntes a `/tmp`.
 
@@ -97,7 +103,7 @@ Añádelas en la pestaña **Environment Variables / Variables de entorno** del p
 
 ## 6. Migraciones y arranque
 
-Las migraciones se aplican **automáticamente** al abrir la base de datos (`PanDatabase` ejecuta `001_initial_schema`, `002_moderation_welcome_tickets_logging` y `003_autoroles_statistics_suggestions_automod` una sola vez y registra los IDs en `schema_migrations`). No hay que ejecutar nada adicional, pero existe `npm run db:migrate` como comando explícito. La migración `003` es aditiva: crea tablas nuevas y no modifica ni borra los datos de versiones anteriores.
+Las migraciones se aplican **automáticamente** al abrir la base de datos (`PanDatabase` ejecuta `001`–`004` una sola vez y registra los IDs en `schema_migrations`). No hay que ejecutar nada adicional, pero existe `npm run db:migrate` como comando explícito. Las migraciones son aditivas: crean tablas nuevas y no modifican ni borran datos existentes.
 
 Secuencia recomendada en el panel, la primera vez:
 
@@ -132,7 +138,7 @@ Para comprobar el payload sin llamar a Discord:
 npm run commands:preview
 ```
 
-Escribe `data/commands.json` con los **24 comandos** actuales. Vuelve a ejecutar el despliegue siempre que cambie el conjunto de comandos, para que Discord deje de mostrar entradas obsoletas.
+Escribe `data/commands.json` con los **26 comandos** actuales. Vuelve a ejecutar el despliegue siempre que cambie el conjunto de comandos, para que Discord deje de mostrar entradas obsoletas.
 
 ---
 
@@ -152,6 +158,9 @@ Escribe `data/commands.json` con los **24 comandos** actuales. Vuelve a ejecutar
 /suggestions setup canal:#sugerencias staff:@Staff
 /automod setup nativo:false eliminar:true advertir:true silenciar:0 registrar:true
 /automod spam ventana:10 max_mensajes:6 identicos:true
+/mcadmin setup enabled:true notificaciones:#minecraft auditoria:#mc-audit
+/mcadmin roles nivel:admin accion:add rol:@AdminsMinecraft
+/mcadmin panel canal:#minecraft tipo:overview
 ```
 
 Verifica con `/settings view`, `/logs view`, `/autorole list`, `/stats channels`, `/suggestions config` y `/automod status`. La referencia completa está en [docs/commands.md](commands.md) y las guías detalladas en [docs/features/](features/).
@@ -172,17 +181,18 @@ npm run healthcheck
 npm run commands:preview
 ```
 
-`healthcheck` valida configuración, migraciones, carga de comandos y eventos **sin conectar a Discord**. `commands:preview` valida los 24 comandos sin llamadas a la API.
+`healthcheck` valida configuración, migraciones, carga de comandos y eventos **sin conectar a Discord**. `commands:preview` valida los 26 comandos sin llamadas a la API.
 
 En Wispbyte, comprueba:
 
-| Comprobación | Resultado esperado                                                                        |
-| ------------ | ----------------------------------------------------------------------------------------- |
-| Arranque     | Logs con `Slash commands loaded` (24), `Discord events loaded` (15) y `PAN BOT is online` |
-| Intents      | Sin errores `Used disallowed intents`                                                     |
-| `/ping`      | Responde con la latencia                                                                  |
-| `/help`      | Lista 24 comandos en 10 categorías                                                        |
-| Persistencia | Tras reiniciar, `/warnings`, paneles, sugerencias y contadores siguen ahí                 |
+| Comprobación | Resultado esperado                                                                                 |
+| ------------ | -------------------------------------------------------------------------------------------------- |
+| Arranque     | Logs con `Slash commands loaded` (26), `Discord events loaded` (15) y `PAN BOT is online`          |
+| Intents      | Sin errores `Used disallowed intents`                                                              |
+| `/ping`      | Responde con la latencia                                                                           |
+| `/help`      | Lista 26 comandos en 11 categorías                                                                 |
+| Persistencia | Tras reiniciar, `/warnings`, paneles, sugerencias, contadores y configuración Minecraft siguen ahí |
+| Minecraft    | `/mc status` responde online/offline sin exponer secretos; RCON solo si está configurado           |
 
 > Si aparece `Used disallowed intents`, vuelve a activar **SERVER MEMBERS INTENT** y **MESSAGE CONTENT INTENT** en el Developer Portal.
 

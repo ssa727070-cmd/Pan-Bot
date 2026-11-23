@@ -13,6 +13,14 @@ import { handlePanelButton } from '../autoroles/service.js';
 import { parsePanelCustomId } from '../autoroles/constants.js';
 import { parseVoteCustomId, SUGGEST_MODAL, SUGGEST_TEXT_INPUT } from '../suggestions/constants.js';
 import { handleVote, publishSuggestion } from '../suggestions/service.js';
+import {
+  MC_BUTTON_PREFIX,
+  MC_MODAL_PREFIX,
+  MC_SELECT_PREFIX,
+  handleMinecraftButton,
+  handleMinecraftModal,
+  handleMinecraftSelect,
+} from '../minecraft/service.js';
 import type { BotEvent } from '../types/event.js';
 import { errorEmbed } from '../utils/embeds.js';
 import { suggestionText } from '../validation/config.js';
@@ -75,8 +83,26 @@ const event: BotEvent = {
           await handleVote(client, interaction, vote.id, vote.action);
           return;
         }
+        if (interaction.customId.startsWith(`${MC_BUTTON_PREFIX}:`)) {
+          await handleMinecraftButton(client, interaction);
+          return;
+        }
       } catch (error) {
         logger.error({ error, customId: interaction.customId }, 'Falló el botón de interacción');
+        await fail(interaction, 'No se pudo completar la acción. Inténtalo de nuevo.');
+      }
+      return;
+    }
+
+    if (interaction.isStringSelectMenu()) {
+      if (!interaction.inGuild()) return;
+      try {
+        if (interaction.customId.startsWith(`${MC_SELECT_PREFIX}:`)) {
+          await handleMinecraftSelect(client, interaction);
+          return;
+        }
+      } catch (error) {
+        logger.error({ error, customId: interaction.customId }, 'Falló el selector de Minecraft');
         await fail(interaction, 'No se pudo completar la acción. Inténtalo de nuevo.');
       }
       return;
@@ -85,6 +111,10 @@ const event: BotEvent = {
     if (interaction.isModalSubmit()) {
       if (!interaction.inGuild()) return;
       try {
+        if (interaction.customId.startsWith(`${MC_MODAL_PREFIX}:`)) {
+          await handleMinecraftModal(client, interaction);
+          return;
+        }
         if (interaction.customId === TICKET_TOPIC_MODAL) {
           const topic = interaction.fields.getTextInputValue(TICKET_TOPIC_INPUT);
           await openTicket(client, interaction, topic);

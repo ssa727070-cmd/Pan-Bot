@@ -7,13 +7,13 @@ import { loadCommands } from './commandHandler.js';
 import type { Command } from '../types/command.js';
 
 describe('slash command definitions', () => {
-  it('loads 24 unique commands and respects Discord nesting rules', async () => {
+  it('loads 26 unique commands and respects Discord nesting rules', async () => {
     const client = {
       commands: new Collection<string, Command>(),
     } as unknown as PanClient;
     await loadCommands(client);
 
-    assert.equal(client.commands.size, 24);
+    assert.equal(client.commands.size, 26);
     assert.deepEqual(
       [...client.commands.keys()].sort(),
       [
@@ -27,6 +27,8 @@ describe('slash command definitions', () => {
         'kick',
         'lock',
         'logs',
+        'mc',
+        'mcadmin',
         'ping',
         'settings',
         'slowmode',

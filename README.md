@@ -1,6 +1,6 @@
 # PAN BOT
 
-**Versión actual: 1.1.0** — [notas de publicación](docs/releases/v1.1.0.md).
+**Versión actual: 1.1.5** — [notas de publicación](docs/releases/v1.1.5.md).
 
 Un bot de Discord profesional y listo para producción, creado con **TypeScript**, **discord.js v14**, **SQLite** y **comandos de barra diagonal (slash commands)**. No depende de Docker ni de servicios externos.
 
@@ -15,6 +15,7 @@ Un bot de Discord profesional y listo para producción, creado con **TypeScript*
 - **Estadísticas (v1.1.0):** miembros/humanos/bots en vivo, entradas, salidas, mensajes y canales contador con throttling, sin contenido de mensajes.
 - **Sugerencias (v1.1.0):** modal, votos 👍/👎 cambiables, estados y respuestas del staff.
 - **AutoMod avanzado (v1.1.0):** spam, menciones, invitaciones, enlaces, palabras y caracteres repetidos con exenciones, acciones y reglas nativas opcionales de Discord.
+- **Administración de Minecraft (v1.1.5):** estado/jugadores del servidor `pansmp.mcserv.world`, acciones admin por RCON con validación estricta, allowlist de consola, permisos por rol de Discord, paneles persistentes, notificaciones, mantenimiento y auditoría en SQLite. Sin economía, rankings, recompensas ni eventos.
 - Configuración por servidor persistida en SQLite con migraciones versionadas y transaccionales.
 - Configuración de entorno tipada (falla rápido si faltan valores), logging estructurado con pino y apagado graceful.
 - Descubrimiento automático de comandos y eventos, cooldowns por comando y manejo centralizado de errores.
@@ -37,7 +38,7 @@ El bot solicita estos intents; **los dos marcados como privilegiados** deben act
 | **`Guild Members`**   | **Sí**       | Jerarquía de roles en moderación y eventos de miembros                |
 | **`Message Content`** | **Sí**       | Leer el contenido de mensajes para la transcripción de tickets y logs |
 
-Los permisos de invitación que necesita el bot son `Manage Roles`, `Manage Channels`, `Manage Guild`, `Manage Messages`, `Moderate Members`, `Ban Members`, `Kick Members`, `View Channel`, `Send Messages`, `Read Message History`, `Embed Links`, `Attach Files` y `Use Application Commands`. El bitfield recomendado para v1.1.0 es **`1078062142`**. El anterior `1101662383126` sigue sirviendo para las funciones antiguas, pero no incluye `Manage Roles`, `Manage Guild`, `Moderate Members` ni `Use Application Commands`, necesarios para las nuevas; reinvita con el nuevo bitfield o concede esos permisos manualmente. Consulta [docs/deployment.md](docs/deployment.md#3-invitar-el-bot-al-servidor).
+Los permisos de invitación que necesita el bot son `Manage Roles`, `Manage Channels`, `Manage Guild`, `Manage Messages`, `Moderate Members`, `Ban Members`, `Kick Members`, `View Channel`, `Send Messages`, `Read Message History`, `Embed Links`, `Attach Files` y `Use Application Commands`. El bitfield recomendado es **`1078062142`**. Si el bot ya está invitado con el bitfield anterior `1101662383126`, puedes conceder los permisos faltantes manualmente. Consulta [docs/deployment.md](docs/deployment.md#3-invitar-el-bot-al-servidor).
 
 ## Inicio rápido
 
@@ -54,15 +55,22 @@ Los comandos slash se registran una sola vez con `npm run commands:deploy`. Ante
 
 ## Variables de entorno
 
-| Variable            | Requerida | Valor por defecto    | Uso                                                       |
-| ------------------- | --------- | -------------------- | --------------------------------------------------------- |
-| `DISCORD_TOKEN`     | sí        | —                    | Token del bot del Developer Portal                        |
-| `DISCORD_CLIENT_ID` | sí        | —                    | Application ID                                            |
-| `DISCORD_GUILD_ID`  | no        | —                    | Registrar comandos solo en un servidor durante desarrollo |
-| `NODE_ENV`          | no        | `development`        | `development`, `production` o `test`                      |
-| `LOG_LEVEL`         | no        | `info`               | Nivel de pino                                             |
-| `DATABASE_PATH`     | no        | `data/panbot.sqlite` | Ruta del archivo SQLite                                   |
-| `EMBED_COLOR`       | no        | `5865F2`             | Color de marca (6 dígitos hexadecimales, sin `#`)         |
+| Variable                      | Requerida | Valor por defecto     | Uso                                                       |
+| ----------------------------- | --------- | --------------------- | --------------------------------------------------------- |
+| `DISCORD_TOKEN`               | sí        | —                     | Token del bot del Developer Portal                        |
+| `DISCORD_CLIENT_ID`           | sí        | —                     | Application ID                                            |
+| `DISCORD_GUILD_ID`            | no        | —                     | Registrar comandos solo en un servidor durante desarrollo |
+| `NODE_ENV`                    | no        | `development`         | `development`, `production` o `test`                      |
+| `LOG_LEVEL`                   | no        | `info`                | Nivel de pino                                             |
+| `DATABASE_PATH`               | no        | `data/panbot.sqlite`  | Ruta del archivo SQLite                                   |
+| `EMBED_COLOR`                 | no        | `5865F2`              | Color de marca (6 dígitos hexadecimales, sin `#`)         |
+| `MINECRAFT_HOST`              | no        | `pansmp.mcserv.world` | Host del servidor Minecraft                               |
+| `MINECRAFT_PORT`              | no        | `25565`               | Puerto Java/status del servidor                           |
+| `MINECRAFT_RCON_PORT`         | no        | `25575`               | Puerto RCON (configurable por separado)                   |
+| `MINECRAFT_RCON_PASSWORD`     | no        | vacío                 | Contraseña RCON; vacío = RCON desactivado                 |
+| `MINECRAFT_RCON_TIMEOUT_MS`   | no        | `5000`                | Timeout de comandos RCON                                  |
+| `MINECRAFT_RCON_RETRIES`      | no        | `1`                   | Reintentos RCON seguros                                   |
+| `MINECRAFT_STATUS_TIMEOUT_MS` | no        | `5000`                | Timeout del ping/status                                   |
 
 ## Scripts
 
@@ -77,7 +85,7 @@ Los comandos slash se registran una sola vez con `npm run commands:deploy`. Ante
 | `npm run format` / `npm run format:check` | Formato con Prettier                                                            |
 | `npm test`                                | Ejecutar pruebas unitarias                                                      |
 | `npm run healthcheck`                     | Verificar configuración, migraciones, comandos y eventos sin conectar a Discord |
-| `npm run commands:preview`                | Validar y guardar los 24 comandos en `data/commands.json` sin llamar a Discord  |
+| `npm run commands:preview`                | Validar y guardar los 26 comandos en `data/commands.json` sin llamar a Discord  |
 | `npm run commands:deploy`                 | Registrar comandos slash en Discord                                             |
 | `npm run db:migrate`                      | Comprobar/aplicar migraciones pendientes de SQLite                              |
 
@@ -99,13 +107,15 @@ PanBot/
 │   │   ├── autoroles/           # autorole
 │   │   ├── statistics/          # stats
 │   │   ├── suggestions/         # suggest y suggestions
-│   │   └── automod/             # automod
+│   │   ├── automod/             # automod
+│   │   └── minecraft/           # mc y mcadmin
 │   ├── events/                  # interacciones, miembros, mensajes, canales, roles, baneos
 │   ├── features/                # bienvenidas y plantillas de mensajes
 │   ├── autoroles/               # servicio de roles y paneles persistentes
 │   ├── statistics/              # snapshot, throttling y embeds
 │   ├── suggestions/             # modal, votos y embeds
 │   ├── automod/                 # detección, acciones y reglas nativas
+│   ├── minecraft/               # RCON, status, permisos, allowlist, monitor y paneles
 │   ├── handlers/                # cargadores automáticos de comandos y eventos
 │   ├── logging/                 # eventos configurables y servicio de registros
 │   ├── moderation/              # validación de permisos y formato
@@ -115,8 +125,8 @@ PanBot/
 │   ├── types/                   # contratos compartidos
 │   └── utils/                   # embeds, formato, canales, errores (+ pruebas)
 ├── docs/commands.md             # Referencia completa de comandos
-├── docs/features/               # Guías de autoroles, estadísticas, sugerencias y AutoMod
-├── docs/releases/v1.1.0.md      # Notas de la versión actual
+├── docs/features/               # Guías de autoroles, estadísticas, sugerencias, AutoMod y Minecraft
+├── docs/releases/v1.1.5.md      # Notas de la versión actual
 ├── docs/deployment.md           # Despliegue en Wispbyte
 ├── .github/workflows/ci.yml     # Verificación en CI
 └── data/                        # Ignorado: archivos SQLite
@@ -138,6 +148,9 @@ PanBot/
 /suggestions setup canal:#sugerencias staff:@Staff
 /automod setup nativo:false eliminar:true advertir:true silenciar:0 registrar:true
 /automod spam ventana:10 max_mensajes:6 identicos:true
+/mcadmin setup enabled:true notificaciones:#minecraft auditoria:#mc-audit
+/mcadmin roles nivel:admin accion:add rol:@AdminsMinecraft
+/mcadmin panel canal:#minecraft tipo:overview
 ```
 
 Consulta [docs/commands.md](docs/commands.md) para la referencia completa de comandos, opciones y placeholders. Para el despliegue en Wispbyte, sigue [docs/deployment.md](docs/deployment.md).
@@ -149,8 +162,9 @@ Las migraciones son aditivas y se ejecutan una sola vez en orden:
 1. `001_initial_schema` — configuración de servidor y estadísticas de comandos.
 2. `002_moderation_welcome_tickets_logging` — advertencias, tickets, participantes, ajustes de bienvenidas y configuración de registros.
 3. `003_autoroles_statistics_suggestions_automod` — autoroles, paneles, estadísticas, sugerencias y AutoMod (v1.1.0).
+4. `004_minecraft_administration` — configuración Minecraft, roles por nivel, allowlist de consola, paneles, auditoría, estado de notificaciones y mantenimiento (v1.1.5).
 
-Se aplican automáticamente al abrir la base de datos. `npm run db:migrate` es un equivalente explícito. Las columnas/tablas musicales que pudiera tener una base de datos antigua se ignoran y no se eliminan para preservar los datos existentes.
+Se aplican automáticamente al abrir la base de datos. `npm run db:migrate` es un equivalente explícito. Las columnas/tablas musicales heredadas se ignoran y no se eliminan para preservar los datos existentes.
 
 ## Seguridad
 

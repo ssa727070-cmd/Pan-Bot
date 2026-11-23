@@ -17,7 +17,8 @@ export type CommandCategory =
   | 'autoroles'
   | 'statistics'
   | 'suggestions'
-  | 'automod';
+  | 'automod'
+  | 'minecraft';
 
 /** Contract shared by every slash command in src/commands. */
 export interface Command {

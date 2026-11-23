@@ -4,6 +4,7 @@ import { logger } from './core/logger.js';
 import { PanDatabase } from './database/client.js';
 import { loadCommands } from './handlers/commandHandler.js';
 import { loadEvents } from './handlers/eventHandler.js';
+import { stopMinecraftMonitor } from './minecraft/monitor.js';
 
 async function main(): Promise<void> {
   const client = new PanClient();
@@ -26,6 +27,7 @@ function registerShutdownHandlers(client: PanClient): void {
     logger.info({ signal }, 'Shutting down PAN BOT');
 
     if (client.statsTimer) clearInterval(client.statsTimer);
+    stopMinecraftMonitor(client);
     client.destroy();
     client.db.close();
 

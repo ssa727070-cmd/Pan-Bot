@@ -24,6 +24,13 @@ async function healthcheck(): Promise<void> {
     count: number;
   };
 
+  if (client.commands.size !== 26) {
+    throw new Error(`Expected 26 slash commands, found ${client.commands.size}`);
+  }
+  if (count !== 4) {
+    throw new Error(`Expected 4 migrations, found ${count}`);
+  }
+
   logger.info(
     { commands: client.commands.size, migrations: count, database: env.DATABASE_PATH },
     'Healthcheck passed',

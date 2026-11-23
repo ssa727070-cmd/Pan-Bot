@@ -9,6 +9,16 @@ const optionalSnowflake = z.preprocess(
   snowflake.optional(),
 );
 
+/** Environment numbers arrive as strings. Empty values use the documented default. */
+const numberFromEnv = (defaultValue: number, min: number, max: number) =>
+  z.preprocess((value) => {
+    if (value === undefined || value === null || value === '') return defaultValue;
+    if (typeof value === 'string') return Number(value.trim());
+    return value;
+  }, z.number().int().min(min).max(max));
+
+const portFromEnv = (defaultValue: number) => numberFromEnv(defaultValue, 1, 65535);
+
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
@@ -23,6 +33,16 @@ const envSchema = z.object({
     .string()
     .regex(/^[0-9a-fA-F]{6}$/, 'Expected a 6-digit hex colour without #')
     .default('5865F2'),
+
+  // Minecraft administration. RCON is opt-in: an empty password disables commands
+  // that need it, while the public status query never authenticates.
+  MINECRAFT_HOST: z.string().trim().min(1).default('pansmp.mcserv.world'),
+  MINECRAFT_PORT: portFromEnv(25565),
+  MINECRAFT_RCON_PORT: portFromEnv(25575),
+  MINECRAFT_RCON_PASSWORD: z.string().default(''),
+  MINECRAFT_RCON_TIMEOUT_MS: numberFromEnv(5000, 500, 60000),
+  MINECRAFT_RCON_RETRIES: numberFromEnv(1, 0, 3),
+  MINECRAFT_STATUS_TIMEOUT_MS: numberFromEnv(5000, 500, 60000),
 });
 
 const parsed = envSchema.safeParse(process.env);
