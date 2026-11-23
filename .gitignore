@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+*.tsbuildinfo
+
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+
+# Runtime data
+data/*
+!data/.gitkeep
+logs/
+*.log
+npm-debug.log*
+
+# Lavalink plugins are downloaded locally
+lavalink/plugins/*.jar
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+coverage/
