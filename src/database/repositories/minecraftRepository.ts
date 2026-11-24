@@ -202,9 +202,11 @@ export class MinecraftRepository {
   }
 
   public updateSettings(guildId: string, patch: MinecraftSettingsPatch): MinecraftSettings {
-    const entries = Object.entries(patch).filter(([key]) => key in SETTINGS_COLUMNS) as Array<
-      [keyof MinecraftSettingsPatch, unknown]
-    >;
+    // `undefined` means "not provided": keep the stored value instead of writing NULL
+    // (which cleared configured channels and violated NOT NULL columns).
+    const entries = Object.entries(patch).filter(
+      ([key, value]) => key in SETTINGS_COLUMNS && value !== undefined,
+    ) as Array<[keyof MinecraftSettingsPatch, unknown]>;
     if (entries.length === 0) return this.getSettings(guildId);
 
     const columns = entries.map(([key]) => SETTINGS_COLUMNS[key]);

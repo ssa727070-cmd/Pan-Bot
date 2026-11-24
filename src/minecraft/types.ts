@@ -83,6 +83,10 @@ export interface MinecraftActionOptions {
   reason?: string;
   message?: string;
   value?: string;
+  /** Gamerule name for `gamerules`. */
+  gamerule?: string;
+  /** Optional new gamerule value; omitted means "query". */
+  gameruleValue?: string;
   action?: string;
   detail?: string;
   amount?: number;

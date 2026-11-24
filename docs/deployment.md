@@ -53,10 +53,10 @@ Extrae el ZIP en tu equipo y comprueba que contiene `package.json`, `package-loc
 URL de invitación (scopes `bot` + `applications.commands`, permisos ya existentes):
 
 ```text
-https://discord.com/oauth2/authorize?client_id=TU_APPLICATION_ID&permissions=1078062142&scope=bot%20applications.commands
+https://discord.com/oauth2/authorize?client_id=TU_APPLICATION_ID&permissions=1101927672886&scope=bot%20applications.commands
 ```
 
-Sustituye `TU_APPLICATION_ID` por el Application ID del paso 1. El bitfield **`1078062142`** incluye los permisos necesarios para las funciones actuales. Si el bot ya está en el servidor con el bitfield anterior `1101662383126`, puedes conceder los permisos faltantes manualmente.
+Sustituye `TU_APPLICATION_ID` por el Application ID del paso 1. El bitfield **`1101927672886`** incluye exactamente los permisos necesarios: Manage Roles, Manage Channels, Manage Guild, Manage Messages, Moderate Members, Ban Members, Kick Members, View Channel, Send Messages, Read Message History, Embed Links, Attach Files y Use Application Commands. El valor `1078062142` de versiones anteriores era incorrecto (incluía Administrator); si lo usaste, quita el permiso de administrador al rol del bot.
 
 ---
 

@@ -4,14 +4,17 @@ import {
   ButtonStyle,
   ChannelType,
   EmbedBuilder,
+  MessageFlags,
   ModalBuilder,
-  PermissionFlagsBits,
   StringSelectMenuBuilder,
   TextInputBuilder,
   TextInputStyle,
+  type ButtonInteraction,
   type Guild,
   type GuildMember,
   type MessageActionRowComponentBuilder,
+  type ModalSubmitInteraction,
+  type StringSelectMenuInteraction,
   type TextBasedChannel,
 } from 'discord.js';
 import { env } from '../config/env.js';
@@ -23,12 +26,22 @@ import {
 } from '../database/repositories/minecraftRepository.js';
 import { createEmbed, errorEmbed, infoEmbed, successEmbed, warningEmbed } from '../utils/embeds.js';
 import { validateConsoleInput } from './allowlist.js';
-import { buildMinecraftCommand } from './commands.js';
-import { createConfirmation } from './confirmation.js';
-import { getMinecraftConnection, runRconCommand } from './connection.js';
+import { buildMinecraftCommand, type BuiltCommand } from './commands.js';
+import {
+  cancelConfirmation,
+  consumeConfirmation,
+  createConfirmation,
+  type ConfirmationOutcome,
+  type MinecraftConfirmationAction,
+} from './confirmation.js';
+import {
+  getMinecraftConnection,
+  rconUnavailableMessage,
+  runRconCommand,
+  type RconUnavailableReason,
+} from './connection.js';
 import { detectPlugins, softwareLabel, type MinecraftSoftware } from './integrations.js';
-import { actionLevel, canManageMinecraft, isApplicationOwner } from './permissions.js';
-import { minecraftRateLimiter } from './rateLimiter.js';
+import { actionLevel, canManageMinecraft, isMinecraftOwner } from './permissions.js';
 import { redactSecrets } from './redact.js';
 import { queryMinecraftStatus } from './status.js';
 import type {
@@ -41,9 +54,20 @@ import type {
   MinecraftStatus,
 } from './types.js';
 
+export { sendMinecraftNotification } from './notifications.js';
+
 export const MC_BUTTON_PREFIX = 'mc';
 export const MC_SELECT_PREFIX = 'mc-select';
 export const MC_MODAL_PREFIX = 'mc-modal';
+
+const PANEL_KINDS: readonly MinecraftPanelKind[] = [
+  'overview',
+  'status',
+  'players',
+  'players-admin',
+  'server-admin',
+  'maintenance',
+];
 
 const ACTIONS_REQUIRING_RCON = new Set<MinecraftAction>([
   'kick',
@@ -125,7 +149,28 @@ async function sendAuditToChannel(
   });
 }
 
-function actionDenied(action: MinecraftAction, level: MinecraftLevel): MinecraftActionResult {
+function auditEmbed(input: {
+  action: string;
+  adminId: string;
+  result: string;
+  targetPlayer?: string | null;
+  command?: string | null;
+}): EmbedBuilder {
+  return infoEmbed(
+    'Auditoría Minecraft',
+    [
+      `Acción: **${input.action}**`,
+      `Moderador: <@${input.adminId}>`,
+      `Resultado: **${input.result}**`,
+      input.targetPlayer ? `Objetivo: ${input.targetPlayer}` : null,
+      input.command ? `Comando: \`${redactSecrets(input.command).slice(0, 300)}\`` : null,
+    ]
+      .filter(Boolean)
+      .join('\n'),
+  );
+}
+
+function actionDenied(level: MinecraftLevel): MinecraftActionResult {
   return {
     ephemeral: true,
     embeds: [
@@ -136,18 +181,60 @@ function actionDenied(action: MinecraftAction, level: MinecraftLevel): Minecraft
   };
 }
 
-// Reserved for future plugin-gated actions.
-
-function rconMissing(): MinecraftActionResult {
+function rconMissing(reason: RconUnavailableReason): MinecraftActionResult {
   return {
     ephemeral: true,
-    embeds: [
-      warningEmbed(
-        'RCON no configurado',
-        'Configura `MINECRAFT_RCON_PASSWORD` en el entorno y asegúrate de que el hosting permita RCON. Las consultas de estado siguen disponibles si el puerto del servidor responde.',
-      ),
-    ],
+    embeds: [warningEmbed('RCON no disponible', rconUnavailableMessage(reason))],
   };
+}
+
+/**
+ * Single access gate for every Minecraft action, command, button and confirmation:
+ * guild authorisation, integration enabled and Minecraft permission level.
+ * Returns a denial to show, or null when the member may proceed.
+ */
+export function checkMinecraftAccess(
+  client: PanClient,
+  member: GuildMember,
+  action: MinecraftAction,
+  options: { requireEnabled?: boolean; target?: string | null; command?: string | null } = {},
+): MinecraftActionResult | null {
+  const guildId = member.guild.id;
+  const connection = getMinecraftConnection(client, guildId);
+  if (!connection.guildAllowed) {
+    return {
+      ephemeral: true,
+      embeds: [
+        errorEmbed(
+          'Este servidor de Discord no está autorizado para la integración de Minecraft (`MINECRAFT_GUILD_IDS`).',
+        ),
+      ],
+    };
+  }
+  if ((options.requireEnabled ?? true) && !connection.settings.enabled) {
+    return {
+      ephemeral: true,
+      embeds: [
+        warningEmbed(
+          'Minecraft desactivado',
+          'Un administrador debe ejecutar `/mcadmin setup enabled:true` primero.',
+        ),
+      ],
+    };
+  }
+  if (!canManageMinecraft(client, member, action)) {
+    audit(client, {
+      guildId,
+      adminId: member.id,
+      action,
+      targetPlayer: options.target ?? null,
+      command: options.command ?? null,
+      result: 'denied',
+      error: 'permiso insuficiente',
+    });
+    return actionDenied(actionLevel(action));
+  }
+  return null;
 }
 
 function statusEmbed(
@@ -161,9 +248,10 @@ function statusEmbed(
     );
   }
 
+  const partial = status.playerNames.length < status.playersOnline;
   const players =
     status.playerNames.length > 0
-      ? status.playerNames.slice(0, 20).join(', ')
+      ? `${status.playerNames.slice(0, 20).join(', ')}${partial ? ' (lista parcial del ping)' : ''}`
       : status.playersOnline > 0
         ? 'Nombres no disponibles desde la respuesta del servidor.'
         : 'Nadie conectado.';
@@ -191,6 +279,30 @@ function statusEmbed(
   });
 }
 
+function playersEmbed(status: MinecraftStatus | null): EmbedBuilder {
+  const partial = status ? status.playerNames.length < status.playersOnline : false;
+  return createEmbed({
+    title: 'Jugadores conectados',
+    description: status
+      ? status.playerNames.length > 0
+        ? `${status.playerNames
+            .map((name) => `• ${name}`)
+            .join('\n')
+            .slice(
+              0,
+              3900,
+            )}${partial ? '\n\n_El ping público solo muestra una parte de los jugadores._' : ''}`
+        : status.playersOnline > 0
+          ? 'Hay jugadores conectados, pero sus nombres no están disponibles desde el ping público.'
+          : 'No hay jugadores conectados.'
+      : 'No se pudo consultar el servidor.',
+    fields: status
+      ? [{ name: 'Conteo', value: `${status.playersOnline}/${status.playersMax}`, inline: true }]
+      : [],
+  });
+}
+
+/** Always queries the operator-configured endpoint; never a user-supplied host. */
 async function fetchStatus(client: PanClient, guildId: string): Promise<MinecraftStatus | null> {
   const connection = getMinecraftConnection(client, guildId);
   return queryMinecraftStatus({
@@ -204,7 +316,7 @@ function panelComponents(
   kind: MinecraftPanelKind,
   panelId: number,
 ): ActionRowBuilder<MessageActionRowComponentBuilder>[] {
-  const row1 = new ActionRowBuilder<ButtonBuilder>().addComponents(
+  const row1 = new ActionRowBuilder<MessageActionRowComponentBuilder>().addComponents(
     new ButtonBuilder()
       .setCustomId(`${MC_BUTTON_PREFIX}:refresh:${panelId}`)
       .setLabel('Actualizar')
@@ -265,8 +377,8 @@ function panelComponents(
       },
     );
 
-  const row2 = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(select);
-  return [row1, row2 as unknown as ActionRowBuilder<MessageActionRowComponentBuilder>];
+  const row2 = new ActionRowBuilder<MessageActionRowComponentBuilder>().addComponents(select);
+  return [row1, row2];
 }
 
 async function buildPanelEmbeds(
@@ -280,32 +392,7 @@ async function buildPanelEmbeds(
   const base = statusEmbed(status, connection);
 
   if (kind === 'status') return [base];
-  if (kind === 'players') {
-    return [
-      createEmbed({
-        title: 'Jugadores conectados',
-        description: status
-          ? status.playerNames.length > 0
-            ? status.playerNames
-                .map((name) => `• ${name}`)
-                .join('\n')
-                .slice(0, 4000)
-            : status.playersOnline > 0
-              ? 'Hay jugadores conectados, pero el servidor no expuso sus nombres en el ping.'
-              : 'No hay jugadores conectados.'
-          : 'No se pudo consultar el servidor.',
-        fields: status
-          ? [
-              {
-                name: 'Conteo',
-                value: `${status.playersOnline}/${status.playersMax}`,
-                inline: true,
-              },
-            ]
-          : [],
-      }),
-    ];
-  }
+  if (kind === 'players') return [playersEmbed(status)];
   if (kind === 'maintenance') {
     return [
       infoEmbed(
@@ -329,13 +416,18 @@ async function buildPanelEmbeds(
     ];
   }
 
+  const rcon = connection.rconConfigured
+    ? 'configurado'
+    : connection.rconUnavailableReason === 'guild-not-authorized'
+      ? 'no autorizado para este servidor de Discord'
+      : 'no configurado';
   return [
     base,
     infoEmbed(
       'Configuración',
       [
         `Integración: **${settings.enabled ? 'activa' : 'inactiva'}**`,
-        `RCON: **${connection.rconConfigured ? 'configurado' : 'no configurado'}**`,
+        `RCON: **${rcon}**`,
         `Canal notificaciones: ${settings.notificationChannelId ? `<#${settings.notificationChannelId}>` : 'no configurado'}`,
         `Canal auditoría: ${settings.auditChannelId ? `<#${settings.auditChannelId}>` : 'no configurado'}`,
         `Intervalo monitor: **${settings.notifyIntervalSeconds}s**`,
@@ -358,11 +450,113 @@ export async function renderMinecraftPanel(
   };
 }
 
-async function assertManageGuild(interaction: MinecraftInteraction): Promise<void> {
-  const { member } = ensureGuild(interaction);
-  if (!member.permissions.has(PermissionFlagsBits.ManageGuild)) {
-    throw new Error('Necesitas el permiso **Gestionar servidor** para configurar Minecraft.');
+function confirmationPrompt(token: string, title: string, description: string) {
+  return {
+    ephemeral: true,
+    embeds: [warningEmbed(title, description)],
+    components: [
+      new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`${MC_BUTTON_PREFIX}:confirm:${token}`)
+          .setLabel('Confirmar')
+          .setStyle(ButtonStyle.Danger),
+        new ButtonBuilder()
+          .setCustomId(`${MC_BUTTON_PREFIX}:cancel:${token}`)
+          .setLabel('Cancelar')
+          .setStyle(ButtonStyle.Secondary),
+      ),
+    ],
+  } satisfies MinecraftActionResult;
+}
+
+/** Runs an already validated command over RCON, audits it and reports to the audit channel. */
+async function performRconCommand(
+  client: PanClient,
+  member: GuildMember,
+  built: BuiltCommand,
+  options: { ephemeral?: boolean } = {},
+): Promise<MinecraftActionResult> {
+  const guildId = member.guild.id;
+  let output: string;
+  try {
+    output = await runRconCommand(client, guildId, built.command);
+  } catch (error) {
+    const message = redactSecrets(error instanceof Error ? error.message : error);
+    audit(client, {
+      guildId,
+      adminId: member.id,
+      action: built.action,
+      targetPlayer: built.targetPlayer ?? null,
+      command: built.command,
+      result: 'failure',
+      error: message,
+    });
+    await sendAuditToChannel(
+      client,
+      guildId,
+      auditEmbed({
+        action: built.action,
+        adminId: member.id,
+        result: 'failure',
+        targetPlayer: built.targetPlayer,
+        command: built.command,
+      }),
+    );
+    logger.warn({ error: message, action: built.action, guildId }, 'Acción de Minecraft falló');
+    return { ephemeral: true, embeds: [errorEmbed(`No se pudo completar la acción: ${message}`)] };
   }
+
+  const suspiciousOutput = /unknown command|not found|no such command/i.test(output);
+  const result = suspiciousOutput ? 'failure' : 'success';
+  audit(client, {
+    guildId,
+    adminId: member.id,
+    action: built.action,
+    targetPlayer: built.targetPlayer ?? null,
+    command: built.command,
+    result,
+    error: suspiciousOutput ? 'El servidor reportó comando desconocido/no disponible' : null,
+  });
+  await sendAuditToChannel(
+    client,
+    guildId,
+    auditEmbed({
+      action: built.action,
+      adminId: member.id,
+      result,
+      targetPlayer: built.targetPlayer,
+      command: built.command,
+    }),
+  );
+
+  const safeOutput = redactSecrets(output).slice(0, 3500) || 'Sin salida';
+  const pluginNote =
+    built.plugin && suspiciousOutput
+      ? `\n\n⚠️ Esta acción puede requerir plugin: **${built.plugin}**.`
+      : '';
+  return {
+    ephemeral: options.ephemeral ?? true,
+    embeds: [
+      suspiciousOutput
+        ? warningEmbed(
+            'Comando no disponible',
+            `El servidor respondió:\n\`\`\`\n${safeOutput}\n\`\`\`${pluginNote}`,
+          )
+        : successEmbed(
+            'Acción ejecutada',
+            `Comando: \`${redactSecrets(built.command)}\`\nSalida:\n\`\`\`\n${safeOutput}\n\`\`\`${built.plugin ? `\n\nDependencia: ${built.plugin}` : ''}`,
+          ),
+    ],
+  };
+}
+
+function validateConsoleFor(client: PanClient, member: GuildMember, raw: string) {
+  const settings = repo(client).getSettings(member.guild.id);
+  return validateConsoleInput(raw, {
+    custom: repo(client).listAllowedCommands(member.guild.id),
+    unrestricted: settings.unrestrictedConsole,
+    isOwner: isMinecraftOwner(member),
+  });
 }
 
 export async function executeMinecraftAction(
@@ -373,33 +567,15 @@ export async function executeMinecraftAction(
 ): Promise<MinecraftActionResult> {
   const { guild, member } = ensureGuild(interaction);
   const guildId = guild.id;
+
+  const denied = checkMinecraftAccess(client, member, action, {
+    requireEnabled: action !== 'setup',
+    target: options.player ?? null,
+    command: options.command ?? null,
+  });
+  if (denied) return denied;
+
   const settings = repo(client).getSettings(guildId);
-  const level = actionLevel(action);
-
-  if (action !== 'setup' && !settings.enabled) {
-    return {
-      ephemeral: true,
-      embeds: [
-        warningEmbed(
-          'Minecraft desactivado',
-          'Un administrador debe ejecutar `/mcadmin setup enabled:true` primero.',
-        ),
-      ],
-    };
-  }
-
-  if (!canManageMinecraft(client, member, action)) {
-    audit(client, {
-      guildId,
-      adminId: member.id,
-      action,
-      targetPlayer: options.player ?? null,
-      command: options.command ?? null,
-      result: 'denied',
-      error: 'permiso insuficiente',
-    });
-    return actionDenied(action, level);
-  }
 
   try {
     if (action === 'status' || action === 'info' || action === 'version') {
@@ -414,33 +590,7 @@ export async function executeMinecraftAction(
     if (action === 'players') {
       const status = await fetchStatus(client, guildId);
       audit(client, { guildId, adminId: member.id, action, result: 'success' });
-      return {
-        embeds: [
-          createEmbed({
-            title: 'Jugadores conectados',
-            description: status
-              ? status.playerNames.length > 0
-                ? status.playerNames
-                    .map((name) => `• ${name}`)
-                    .join('\n')
-                    .slice(0, 4000)
-                : status.playersOnline > 0
-                  ? 'Hay jugadores conectados, pero sus nombres no están disponibles desde el ping público.'
-                  : 'No hay jugadores conectados.'
-              : 'No se pudo consultar el servidor.',
-            fields: status
-              ? [
-                  {
-                    name: 'Conteo',
-                    value: `${status.playersOnline}/${status.playersMax}`,
-                    inline: true,
-                  },
-                ]
-              : [],
-          }),
-        ],
-        ephemeral: options.ephemeral,
-      };
+      return { embeds: [playersEmbed(status)], ephemeral: options.ephemeral };
     }
 
     if (action === 'maintenance-status') {
@@ -457,9 +607,10 @@ export async function executeMinecraftAction(
     }
 
     if (action === 'integrations') {
+      const connection = getMinecraftConnection(client, guildId);
       const status = await fetchStatus(client, guildId);
       let plugins = detectPlugins('');
-      if (getMinecraftConnection(client, guildId).rconConfigured) {
+      if (connection.rconConfigured) {
         const list = await runRconCommand(client, guildId, 'plugins').catch(() => '');
         plugins = detectPlugins(list);
       }
@@ -471,7 +622,7 @@ export async function executeMinecraftAction(
             'Integraciones de Minecraft',
             [
               `Software detectado: **${status ? softwareLabel(status.software as MinecraftSoftware) : 'desconocido (sin respuesta)'}**`,
-              `RCON: **${getMinecraftConnection(client, guildId).rconConfigured ? 'configurado' : 'no configurado'}**`,
+              `RCON: **${connection.rconConfigured ? 'configurado' : 'no disponible'}**`,
               `LuckPerms: **${plugins.luckPerms ? 'detectado' : 'no detectado'}**`,
               `EssentialsX: **${plugins.essentialsX ? 'detectado' : 'no detectado'}**`,
               `PlaceholderAPI: **${plugins.placeholderApi ? 'detectado' : 'no detectado'}**`,
@@ -496,7 +647,7 @@ export async function executeMinecraftAction(
               : entries
                   .map(
                     (entry) =>
-                      `#${entry.id} • <t:${Math.floor(Date.parse(entry.createdAt) / 1000)}:R> • <@${entry.adminId}> • **${entry.action}** • ${entry.result}${entry.targetPlayer ? ` • ${entry.targetPlayer}` : ''}${entry.error ? ` • ${redactSecrets(entry.error)}` : ''}`,
+                      `#${entry.id} • <t:${Math.floor(Date.parse(`${entry.createdAt.replace(' ', 'T')}Z`) / 1000)}:R> • <@${entry.adminId}> • **${entry.action}** • ${entry.result}${entry.targetPlayer ? ` • ${entry.targetPlayer}` : ''}${entry.error ? ` • ${redactSecrets(entry.error)}` : ''}`,
                   )
                   .join('\n')
                   .slice(0, 4000),
@@ -507,15 +658,11 @@ export async function executeMinecraftAction(
 
     if (ACTIONS_REQUIRING_RCON.has(action)) {
       const connection = getMinecraftConnection(client, guildId);
-      if (!connection.rconConfigured) return rconMissing();
+      if (connection.rconUnavailableReason) return rconMissing(connection.rconUnavailableReason);
 
       if (action === 'console') {
         const raw = options.command?.trim() ?? '';
-        const validation = validateConsoleInput(raw, {
-          custom: repo(client).listAllowedCommands(guildId),
-          unrestricted: settings.unrestrictedConsole,
-          isOwner: isApplicationOwner(member),
-        });
+        const validation = validateConsoleFor(client, member, raw);
         if (!validation.ok) {
           audit(client, {
             guildId,
@@ -533,90 +680,40 @@ export async function executeMinecraftAction(
             userId: member.id,
             action: { kind: 'console', command: validation.command },
           });
-          return {
-            ephemeral: true,
-            embeds: [
-              warningEmbed(
-                'Confirmar comando de consola',
-                `Vas a ejecutar:\n\`\`\`\n${validation.command}\n\`\`\`\nOrigen: **${validation.source}**. Confirma solo si entiendes el impacto.`,
-              ),
-            ],
-            components: [
-              new ActionRowBuilder<ButtonBuilder>().addComponents(
-                new ButtonBuilder()
-                  .setCustomId(`${MC_BUTTON_PREFIX}:confirm:${token}`)
-                  .setLabel('Confirmar')
-                  .setStyle(ButtonStyle.Danger),
-                new ButtonBuilder()
-                  .setCustomId(`${MC_BUTTON_PREFIX}:cancel:${token}`)
-                  .setLabel('Cancelar')
-                  .setStyle(ButtonStyle.Secondary),
-              ),
-            ],
-          };
+          return confirmationPrompt(
+            token,
+            'Confirmar comando de consola',
+            `Vas a ejecutar:\n\`\`\`\n${validation.command}\n\`\`\`\nOrigen: **${validation.source}**. Confirma solo si entiendes el impacto.`,
+          );
         }
-        const output = await runRconCommand(client, guildId, validation.command);
-        audit(client, {
-          guildId,
-          adminId: member.id,
-          action,
+        return performRconCommand(client, member, {
+          action: 'console',
           command: validation.command,
-          result: 'success',
         });
-        return {
-          ephemeral: true,
-          embeds: [
-            successEmbed(
-              'Comando ejecutado',
-              `Salida:\n\`\`\`\n${redactSecrets(output).slice(0, 3500) || 'Sin salida'}\n\`\`\``,
-            ),
-          ],
-        };
       }
 
+      // Validate first so the confirmation only ever stores a safe target.
       const built = buildMinecraftCommand(action, options);
-      const output = await runRconCommand(client, guildId, built.command);
-      const suspiciousOutput = /unknown command|not found|no such command/i.test(output);
-      audit(client, {
-        guildId,
-        adminId: member.id,
-        action,
-        targetPlayer: built.targetPlayer ?? null,
-        command: built.command,
-        result: suspiciousOutput ? 'failure' : 'success',
-        error: suspiciousOutput ? 'El servidor reportó comando desconocido/no disponible' : null,
-      });
-      await sendAuditToChannel(
-        client,
-        guildId,
-        infoEmbed(
-          'Auditoría Minecraft',
-          `Acción: **${action}**\nModerador: <@${member.id}>\nResultado: **${suspiciousOutput ? 'failure' : 'success'}**${built.targetPlayer ? `\nObjetivo: ${built.targetPlayer}` : ''}`,
-        ),
-      );
-      const pluginNote =
-        built.plugin && suspiciousOutput
-          ? `\n\n⚠️ Esta acción puede requerir plugin: **${built.plugin}**.`
-          : '';
-      return {
-        ephemeral: options.ephemeral ?? true,
-        embeds: [
-          suspiciousOutput
-            ? warningEmbed(
-                'Comando no disponible',
-                `El servidor respondió:\n\`\`\`\n${redactSecrets(output).slice(0, 3500) || 'Sin salida'}\n\`\`\`${pluginNote}`,
-              )
-            : successEmbed(
-                'Acción ejecutada',
-                `Comando: \`${built.command}\`\nSalida:\n\`\`\`\n${redactSecrets(output).slice(0, 3500) || 'Sin salida'}\n\`\`\`${built.plugin ? `\n\nDependencia: ${built.plugin}` : ''}`,
-              ),
-        ],
-      };
+
+      if (action === 'ban') {
+        const token = createConfirmation({
+          guildId,
+          userId: member.id,
+          action: { kind: 'ban', player: built.targetPlayer ?? '', reason: options.reason ?? null },
+        });
+        return confirmationPrompt(
+          token,
+          'Confirmar ban',
+          `Vas a banear a **${built.targetPlayer}** del servidor de Minecraft.\nComando: \`${built.command}\``,
+        );
+      }
+
+      return performRconCommand(client, member, built, { ephemeral: options.ephemeral ?? true });
     }
 
     return { ephemeral: true, embeds: [errorEmbed('Acción no implementada.')] };
   } catch (error) {
-    const message = redactSecrets(error);
+    const message = redactSecrets(error instanceof Error ? error.message : error);
     audit(client, {
       guildId,
       adminId: member.id,
@@ -626,7 +723,7 @@ export async function executeMinecraftAction(
       result: 'failure',
       error: message,
     });
-    logger.warn({ error, action, guildId }, 'Acción de Minecraft falló');
+    logger.warn({ error: message, action, guildId }, 'Acción de Minecraft falló');
     return { ephemeral: true, embeds: [errorEmbed(`No se pudo completar la acción: ${message}`)] };
   }
 }
@@ -637,8 +734,10 @@ export async function sendMinecraftPanel(
   channelId: string,
   kind: MinecraftPanelKind,
 ): Promise<MinecraftActionResult> {
-  const { guild } = ensureGuild(interaction);
-  await assertManageGuild(interaction);
+  const { guild, member } = ensureGuild(interaction);
+  const denied = checkMinecraftAccess(client, member, 'panel-send', { requireEnabled: false });
+  if (denied) return denied;
+
   const channel = await guild.channels.fetch(channelId).catch(() => null);
   if (!channel || channel.type !== ChannelType.GuildText) {
     return { ephemeral: true, embeds: [errorEmbed('Selecciona un canal de texto válido.')] };
@@ -656,7 +755,7 @@ export async function sendMinecraftPanel(
   repo(client).updateSettings(guild.id, { panelChannelId: channelId });
   audit(client, {
     guildId: guild.id,
-    adminId: interaction.user.id,
+    adminId: member.id,
     action: 'panel-send',
     result: 'success',
   });
@@ -692,8 +791,6 @@ export function buildMinecraftModal(
   return modal;
 }
 
-// createMaintenanceConfirmation is the safe public API and is defined below.
-
 export function createMaintenanceConfirmation(input: {
   guildId: string;
   userId: string;
@@ -711,105 +808,119 @@ export function createMaintenanceConfirmation(input: {
       message: input.message,
     },
   });
-  return {
+  const prompt = confirmationPrompt(
     token,
-    embed: warningEmbed(
-      'Confirmar mantenimiento',
-      `Vas a **${input.enabled ? 'activar' : 'desactivar'}** el modo mantenimiento.\nWhitelist: **${input.whitelist ? 'sí' : 'no'}**\nMensaje: ${input.message}`,
-    ),
-    components: [
-      new ActionRowBuilder<ButtonBuilder>().addComponents(
-        new ButtonBuilder()
-          .setCustomId(`${MC_BUTTON_PREFIX}:confirm:${token}`)
-          .setLabel('Confirmar')
-          .setStyle(ButtonStyle.Danger),
-        new ButtonBuilder()
-          .setCustomId(`${MC_BUTTON_PREFIX}:cancel:${token}`)
-          .setLabel('Cancelar')
-          .setStyle(ButtonStyle.Secondary),
-      ),
-    ],
-  };
+    'Confirmar mantenimiento',
+    `Vas a **${input.enabled ? 'activar' : 'desactivar'}** el modo mantenimiento.\nWhitelist: **${input.whitelist ? 'sí' : 'no'}**\nMensaje: ${input.message}`,
+  );
+  return { token, embed: prompt.embeds[0]!, components: prompt.components };
 }
 
+/** The permission-checked action behind each kind of confirmation. */
+function confirmationActionName(action: MinecraftConfirmationAction): MinecraftAction {
+  switch (action.kind) {
+    case 'ban':
+      return 'ban';
+    case 'console':
+      return 'console';
+    case 'maintenance':
+      return action.enabled ? 'maintenance-enable' : 'maintenance-disable';
+  }
+}
+
+function confirmationError(status: Exclude<ConfirmationOutcome['status'], 'ok'>): string {
+  return status === 'forbidden'
+    ? 'Esta confirmación pertenece a otro moderador.'
+    : 'La confirmación expiró o ya se usó.';
+}
+
+/**
+ * Executes a confirmed action. Permissions, guild authorisation, RCON availability
+ * and (for console) the allowlist are re-checked now, not when the prompt was made.
+ */
 export async function applyConfirmedAction(
   client: PanClient,
   interaction: MinecraftInteraction,
-  action: ReturnType<typeof import('./confirmation.js').consumeConfirmation>,
+  action: MinecraftConfirmationAction | null,
 ): Promise<MinecraftActionResult> {
+  if (!action) return { ephemeral: true, embeds: [errorEmbed(confirmationError('expired'))] };
   const { guild, member } = ensureGuild(interaction);
-  if (!action) {
-    return { ephemeral: true, embeds: [errorEmbed('La confirmación expiró o no te pertenece.')] };
-  }
+  const actionName = confirmationActionName(action);
 
-  if (action.kind === 'console') {
-    const result = await executeMinecraftAction(client, interaction, 'console', {
-      command: action.command,
-      ephemeral: true,
-    });
-    // executeMinecraftAction(console) creates another confirmation for mutating/unrestricted; avoid loop by executing directly if already confirmed.
-    if (result.embeds[0]?.data.title?.includes('Confirmar')) {
+  const denied = checkMinecraftAccess(client, member, actionName, {
+    requireEnabled: action.kind !== 'maintenance',
+    target: action.kind === 'ban' ? action.player : null,
+    command: action.kind === 'console' ? action.command : null,
+  });
+  if (denied) return denied;
+
+  try {
+    if (action.kind === 'console' || action.kind === 'ban') {
       const connection = getMinecraftConnection(client, guild.id);
-      if (!connection.rconConfigured) return rconMissing();
-      const output = await runRconCommand(client, guild.id, action.command).catch((error) => {
-        throw error;
-      });
-      audit(client, {
-        guildId: guild.id,
-        adminId: member.id,
-        action: 'console',
-        command: action.command,
-        result: 'success',
-      });
-      return {
-        ephemeral: true,
-        embeds: [
-          successEmbed(
-            'Comando ejecutado',
-            `\`\`\`\n${redactSecrets(output).slice(0, 3500) || 'Sin salida'}\n\`\`\``,
-          ),
-        ],
-      };
+      if (connection.rconUnavailableReason) return rconMissing(connection.rconUnavailableReason);
     }
-    return result;
-  }
 
-  if (action.kind === 'maintenance') {
+    if (action.kind === 'console') {
+      const validation = validateConsoleFor(client, member, action.command);
+      if (!validation.ok || validation.command !== action.command) {
+        const error = validation.ok ? 'El comando cambió tras la confirmación.' : validation.error;
+        audit(client, {
+          guildId: guild.id,
+          adminId: member.id,
+          action: 'console',
+          command: action.command,
+          result: 'denied',
+          error,
+        });
+        return { ephemeral: true, embeds: [errorEmbed(error)] };
+      }
+      return performRconCommand(client, member, { action: 'console', command: action.command });
+    }
+
+    if (action.kind === 'ban') {
+      const built = buildMinecraftCommand('ban', {
+        player: action.player,
+        reason: action.reason ?? undefined,
+      });
+      return performRconCommand(client, member, built);
+    }
+
     const before = repo(client).getSettings(guild.id);
     repo(client).updateSettings(guild.id, {
       maintenanceEnabled: action.enabled,
       maintenanceWhitelist: action.whitelist,
       maintenanceMessage: action.message,
     });
-    audit(client, {
-      guildId: guild.id,
-      adminId: member.id,
-      action: action.enabled ? 'maintenance-enable' : 'maintenance-disable',
-      result: 'success',
-      command: `maintenance whitelist=${action.whitelist}`,
-    });
-    const next = repo(client).getSettings(guild.id);
-    if (
-      action.enabled &&
-      action.whitelist &&
-      getMinecraftConnection(client, guild.id).rconConfigured
-    ) {
-      await runRconCommand(client, guild.id, 'whitelist on').catch((error) => {
-        logger.warn({ error, guildId: guild.id }, 'No se pudo activar whitelist en mantenimiento');
+    const connection = getMinecraftConnection(client, guild.id);
+    if (action.enabled && action.whitelist && connection.rconConfigured) {
+      await runRconCommand(client, guild.id, 'whitelist on').catch((error: unknown) => {
+        logger.warn(
+          { error: redactSecrets(error), guildId: guild.id },
+          'No se pudo activar whitelist en mantenimiento',
+        );
       });
     }
-    if (
-      !action.enabled &&
-      before.maintenanceWhitelist &&
-      getMinecraftConnection(client, guild.id).rconConfigured
-    ) {
-      await runRconCommand(client, guild.id, 'whitelist off').catch((error) => {
+    if (!action.enabled && before.maintenanceWhitelist && connection.rconConfigured) {
+      await runRconCommand(client, guild.id, 'whitelist off').catch((error: unknown) => {
         logger.warn(
-          { error, guildId: guild.id },
+          { error: redactSecrets(error), guildId: guild.id },
           'No se pudo desactivar whitelist al salir de mantenimiento',
         );
       });
     }
+    audit(client, {
+      guildId: guild.id,
+      adminId: member.id,
+      action: actionName,
+      result: 'success',
+      command: `maintenance whitelist=${action.whitelist}`,
+    });
+    await sendAuditToChannel(
+      client,
+      guild.id,
+      auditEmbed({ action: actionName, adminId: member.id, result: 'success' }),
+    );
+    const next = repo(client).getSettings(guild.id);
     return {
       ephemeral: true,
       embeds: [
@@ -819,9 +930,17 @@ export async function applyConfirmedAction(
         ),
       ],
     };
+  } catch (error) {
+    const message = redactSecrets(error instanceof Error ? error.message : error);
+    audit(client, {
+      guildId: guild.id,
+      adminId: member.id,
+      action: actionName,
+      result: 'failure',
+      error: message,
+    });
+    return { ephemeral: true, embeds: [errorEmbed(`No se pudo completar la acción: ${message}`)] };
   }
-
-  return { ephemeral: true, embeds: [errorEmbed('Acción confirmada no soportada.')] };
 }
 
 export async function refreshMinecraftPanelMessage(
@@ -838,9 +957,36 @@ export async function refreshMinecraftPanelMessage(
     .catch(() => undefined);
 }
 
+/** Replies or edits the deferred reply with an action result, never answering twice. */
+export async function respondWithResult(
+  interaction: MinecraftInteraction,
+  result: MinecraftActionResult,
+): Promise<void> {
+  const payload = { embeds: result.embeds, components: result.components ?? [] };
+  if (interaction.deferred || interaction.replied) {
+    await interaction.editReply(payload);
+    return;
+  }
+  await interaction.reply({
+    ...payload,
+    ...(result.ephemeral === false ? {} : { flags: MessageFlags.Ephemeral as const }),
+  });
+}
+
+async function replyEphemeral(
+  interaction: ButtonInteraction | StringSelectMenuInteraction,
+  embeds: EmbedBuilder[],
+): Promise<void> {
+  if (interaction.deferred || interaction.replied) {
+    await interaction.followUp({ embeds, flags: MessageFlags.Ephemeral });
+  } else {
+    await interaction.reply({ embeds, flags: MessageFlags.Ephemeral });
+  }
+}
+
 export async function handleMinecraftButton(
   client: PanClient,
-  interaction: import('discord.js').ButtonInteraction,
+  interaction: ButtonInteraction,
 ): Promise<void> {
   const [, kind, arg] = interaction.customId.split(':');
   if (!interaction.inGuild()) return;
@@ -848,38 +994,46 @@ export async function handleMinecraftButton(
   if (kind === 'confirm' || kind === 'cancel') {
     const token = arg ?? '';
     if (kind === 'cancel') {
-      await interaction.reply({
+      const status = cancelConfirmation(token, interaction.guildId, interaction.user.id);
+      if (status === 'forbidden') {
+        await replyEphemeral(interaction, [errorEmbed(confirmationError(status))]);
+        return;
+      }
+      await interaction.update({
         embeds: [infoEmbed('Acción cancelada', 'No se ejecutó ningún cambio.')],
-        ephemeral: true,
+        components: [],
       });
       return;
     }
-    const { consumeConfirmation } = await import('./confirmation.js');
-    const action = consumeConfirmation(token, interaction.guildId!, interaction.user.id);
-    const result = await applyConfirmedAction(client, interaction, action);
-    await interaction.reply({
-      embeds: result.embeds,
-      components: result.components ?? [],
-      ephemeral: true,
-    });
+
+    // Ownership is checked before consuming: others can never invalidate the token.
+    const outcome = consumeConfirmation(token, interaction.guildId, interaction.user.id);
+    if (outcome.status !== 'ok') {
+      await replyEphemeral(interaction, [errorEmbed(confirmationError(outcome.status))]);
+      return;
+    }
+    // Acknowledge within Discord's 3 s window; RCON can take longer.
+    await interaction.deferUpdate();
+    const result = await applyConfirmedAction(client, interaction, outcome.action);
+    // Replacing the prompt removes the buttons, so it cannot be pressed twice.
+    await interaction.editReply({ embeds: result.embeds, components: result.components ?? [] });
     return;
   }
 
   const panelId = Number(arg);
-  const panel = repo(client).getPanel(interaction.guildId!, panelId);
+  const panel = repo(client).getPanel(interaction.guildId, panelId);
   if (!panel) {
-    await interaction.reply({ embeds: [errorEmbed('Este panel ya no existe.')], ephemeral: true });
+    await replyEphemeral(interaction, [errorEmbed('Este panel ya no existe.')]);
     return;
   }
 
-  const member = interaction.member as GuildMember;
+  const member = asMember(interaction);
+  if (!member) return;
   const action: MinecraftAction =
     kind === 'players' ? 'players' : kind === 'maintenance' ? 'maintenance-status' : 'status';
-  if (!canManageMinecraft(client, member, action)) {
-    await interaction.reply({
-      embeds: actionDenied(action, actionLevel(action)).embeds,
-      ephemeral: true,
-    });
+  const denied = checkMinecraftAccess(client, member, action);
+  if (denied) {
+    await replyEphemeral(interaction, denied.embeds);
     return;
   }
 
@@ -891,95 +1045,75 @@ export async function handleMinecraftButton(
         : kind === 'status'
           ? 'status'
           : panel.kind;
+  await interaction.deferUpdate();
   repo(client).setPanelKind(panel.guildId, panel.id, nextKind);
   const rendered = await renderMinecraftPanel(client, panel.guildId, {
     id: panel.id,
     kind: nextKind,
   });
-  await interaction.update({ embeds: rendered.embeds, components: rendered.components });
+  await interaction.editReply({ embeds: rendered.embeds, components: rendered.components });
+}
+
+function isPanelKind(value: unknown): value is MinecraftPanelKind {
+  return typeof value === 'string' && (PANEL_KINDS as readonly string[]).includes(value);
 }
 
 export async function handleMinecraftSelect(
   client: PanClient,
-  interaction: import('discord.js').StringSelectMenuInteraction,
+  interaction: StringSelectMenuInteraction,
 ): Promise<void> {
   if (!interaction.inGuild()) return;
   const panelId = Number(interaction.customId.split(':')[1]);
-  const panel = repo(client).getPanel(interaction.guildId!, panelId);
+  const panel = repo(client).getPanel(interaction.guildId, panelId);
   if (!panel) {
-    await interaction.reply({ embeds: [errorEmbed('Este panel ya no existe.')], ephemeral: true });
+    await replyEphemeral(interaction, [errorEmbed('Este panel ya no existe.')]);
     return;
   }
-  const kind = (interaction.values[0] as MinecraftPanelKind) ?? 'overview';
-  const member = interaction.member as GuildMember;
+  const kind = interaction.values[0];
+  if (!isPanelKind(kind)) {
+    await replyEphemeral(interaction, [errorEmbed('Sección desconocida.')]);
+    return;
+  }
+  const member = asMember(interaction);
+  if (!member) return;
   const required: MinecraftAction = kind.includes('admin')
     ? 'integrations'
     : kind === 'maintenance'
       ? 'maintenance-status'
       : 'status';
-  if (!canManageMinecraft(client, member, required)) {
-    await interaction.reply({
-      embeds: actionDenied(required, actionLevel(required)).embeds,
-      ephemeral: true,
-    });
+  const denied = checkMinecraftAccess(client, member, required);
+  if (denied) {
+    await replyEphemeral(interaction, denied.embeds);
     return;
   }
+  await interaction.deferUpdate();
   repo(client).setPanelKind(panel.guildId, panel.id, kind);
   const rendered = await renderMinecraftPanel(client, panel.guildId, { id: panel.id, kind });
-  await interaction.update({ embeds: rendered.embeds, components: rendered.components });
+  await interaction.editReply({ embeds: rendered.embeds, components: rendered.components });
 }
 
 export async function handleMinecraftModal(
   client: PanClient,
-  interaction: import('discord.js').ModalSubmitInteraction,
+  interaction: ModalSubmitInteraction,
 ): Promise<void> {
   if (!interaction.inGuild()) return;
-  const action = interaction.customId.split(':')[1] as
-    'say' | 'broadcast' | 'console' | 'maintenance';
+  const action = interaction.customId.split(':')[1];
   const value = interaction.fields.getTextInputValue('value');
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
   const result =
     action === 'console'
       ? await executeMinecraftAction(client, interaction, 'console', {
           command: value,
           ephemeral: true,
         })
-      : action === 'maintenance'
-        ? {
+      : action === 'say' || action === 'broadcast'
+        ? await executeMinecraftAction(client, interaction, action, {
+            message: value,
+            ephemeral: true,
+          })
+        : {
             ephemeral: true,
             embeds: [errorEmbed('Usa /mcadmin maintenance para cambios de mantenimiento.')],
-          }
-        : await executeMinecraftAction(
-            client,
-            interaction,
-            action === 'say' ? 'say' : 'broadcast',
-            {
-              message: value,
-              ephemeral: true,
-            },
-          );
-  await interaction.reply({
-    embeds: result.embeds,
-    components: result.components ?? [],
-    ephemeral: true,
-  });
-}
-
-export async function sendMinecraftNotification(
-  client: PanClient,
-  guildId: string,
-  eventKey: string,
-  subject: string,
-  fingerprint: string,
-  embed: EmbedBuilder,
-): Promise<boolean> {
-  const settings = repo(client).getSettings(guildId);
-  if (!settings.notificationChannelId) return false;
-  if (repo(client).getNotificationFingerprint(guildId, eventKey, subject) === fingerprint)
-    return false;
-  if (!minecraftRateLimiter.tryAcquire(`mc-notify:${guildId}:${eventKey}`, 15_000)) return false;
-  const channel = await client.channels.fetch(settings.notificationChannelId).catch(() => null);
-  if (!isTextChannel(channel)) return false;
-  await channel.send({ embeds: [embed] }).catch(() => undefined);
-  repo(client).markNotification(guildId, eventKey, subject, fingerprint);
-  return true;
+          };
+  await respondWithResult(interaction, result);
 }

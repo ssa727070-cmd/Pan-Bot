@@ -1,6 +1,8 @@
-import { SlashCommandBuilder } from 'discord.js';
+import { MessageFlags, SlashCommandBuilder } from 'discord.js';
 import type { Command } from '../../types/command.js';
-import { executeMinecraftAction } from '../../minecraft/service.js';
+import { translateMcInvocation } from '../../minecraft/options.js';
+import { executeMinecraftAction, respondWithResult } from '../../minecraft/service.js';
+import { errorEmbed } from '../../utils/embeds.js';
 
 const command: Command = {
   category: 'minecraft',
@@ -27,7 +29,7 @@ const command: Command = {
     .addSubcommand((sub) =>
       sub
         .setName('ban')
-        .setDescription('Banea a un jugador (confirmación recomendada por moderación).')
+        .setDescription('Banea a un jugador (requiere confirmación).')
         .addStringOption((o) =>
           o.setName('jugador').setDescription('Jugador o UUID').setRequired(true),
         )
@@ -240,48 +242,24 @@ const command: Command = {
     ),
 
   async execute(interaction, client) {
-    const subcommand = interaction.options.getSubcommand();
+    // Acknowledge first: status pings and RCON can exceed Discord's 3 s window.
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-    let action = subcommand as any;
-    if (action === 'whitelist') {
-      const wlAction = interaction.options.getString('accion', true);
-      action = `whitelist-${wlAction}`;
+    let invocation;
+    try {
+      invocation = translateMcInvocation(interaction.options.getSubcommand(), interaction.options);
+    } catch (error) {
+      await interaction.editReply({
+        embeds: [errorEmbed(error instanceof Error ? error.message : 'Opciones inválidas.')],
+      });
+      return;
     }
-    if (action === 'message') action = interaction.options.getString('tipo', true);
 
-    const result = await executeMinecraftAction(
-      client,
-      interaction,
-      action === 'command' ? 'console' : action,
-      {
-        player: interaction.options.getString('jugador') ?? undefined,
-        reason: interaction.options.getString('razon') ?? undefined,
-        value:
-          interaction.options.getString('duracion') ??
-          interaction.options.getString('valor') ??
-          interaction.options.getString('regla') ??
-          undefined,
-        detail: interaction.options.getString('valor') ?? undefined,
-        mode:
-          interaction.options.getString('accion') ??
-          interaction.options.getString('modo') ??
-          interaction.options.getString('tipo') ??
-          undefined,
-        destination: interaction.options.getString('destino') ?? undefined,
-        amount: interaction.options.getInteger('cantidad') ?? undefined,
-        message: interaction.options.getString('mensaje') ?? undefined,
-        command: interaction.options.getString('comando') ?? undefined,
-        ephemeral: true,
-      },
-    );
-
-    const payload = {
-      embeds: result.embeds,
-      components: result.components ?? [],
-      ephemeral: result.ephemeral ?? false,
-    };
-    if (interaction.deferred || interaction.replied) await interaction.editReply(payload);
-    else await interaction.reply(payload);
+    const result = await executeMinecraftAction(client, interaction, invocation.action, {
+      ...invocation.options,
+      ephemeral: true,
+    });
+    await respondWithResult(interaction, result);
   },
 };
 

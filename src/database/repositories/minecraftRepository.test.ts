@@ -55,3 +55,21 @@ describe('minecraft repository', () => {
     database.close();
   });
 });
+
+describe('minecraft settings partial updates', () => {
+  it('keeps stored values for omitted (undefined) fields', () => {
+    const database = new Database(':memory:');
+    for (const migration of migrations) database.exec(migration.sql);
+    const repo = new MinecraftRepository(database);
+    repo.updateSettings('g1', { enabled: true, notificationChannelId: 'c1', auditChannelId: 'a1' });
+    const next = repo.updateSettings('g1', {
+      enabled: false,
+      notificationChannelId: undefined,
+      notifyLeave: undefined,
+    });
+    assert.equal(next.enabled, false);
+    assert.equal(next.notificationChannelId, 'c1');
+    assert.equal(next.auditChannelId, 'a1');
+    assert.equal(next.notifyLeave, true);
+  });
+});

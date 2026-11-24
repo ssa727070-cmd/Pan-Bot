@@ -1,4 +1,4 @@
-# Referencia de comandos — PAN BOT v1.1.5
+# Referencia de comandos — PAN BOT v1.1.6
 
 26 comandos disponibles. Todos son slash commands. Las respuestas y los errores están en español. Los comandos marcados con 🔒 requieren permisos de gestión y están restringidos por defecto a quienes tienen `Manage Guild`, `Manage Channels` o el permiso indicado.
 
@@ -155,7 +155,7 @@ Estados: `pending` (reabrir), `approved`, `rejected`, `implemented`. Consulta [d
 
 Consulta [docs/features/automod.md](features/automod.md).
 
-## Minecraft (v1.1.5)
+## Minecraft (v1.1.6)
 
 ### `/mc`
 
@@ -165,7 +165,7 @@ Consulta [docs/features/automod.md](features/automod.md).
 | `players`                         | readonly     | Conteo y nombres visibles                                            | Ping público                                             |
 | `info` / `version`                | readonly     | Información y versión/software detectado                             | Ping público                                             |
 | `kick`                            | moderator    | Expulsa a un jugador                                                 | RCON                                                     |
-| `ban`                             | admin        | Banea a un jugador                                                   | RCON                                                     |
+| `ban`                             | admin        | Banea a un jugador (requiere confirmación)                           | RCON                                                     |
 | `pardon`                          | moderator    | Quita ban                                                            | RCON                                                     |
 | `whitelist (add/remove/list)`     | moderator    | Gestiona whitelist                                                   | RCON                                                     |
 | `op` / `deop`                     | admin        | Gestiona operadores                                                  | RCON                                                     |
@@ -178,18 +178,18 @@ Consulta [docs/features/automod.md](features/automod.md).
 | `message`                         | moderator    | `say`, `broadcast` o `announce` al servidor                          | RCON; `broadcast` puede requerir plugin                  |
 | `command`                         | admin        | Ejecuta comando de consola permitido                                 | RCON + allowlist; confirmación si es mutante/irrestricto |
 
-### `/mcadmin` (🔒 `Manage Guild`)
+### `/mcadmin` (🔒 `Manage Guild` + nivel Minecraft `admin`)
 
-| Subcomando      | Descripción                                                          |
-| --------------- | -------------------------------------------------------------------- |
-| `setup`         | Activa integración, host/puertos, canales de notificación/auditoría  |
-| `roles`         | Asigna roles Discord a niveles `owner/admin/moderator/readonly`      |
-| `allowlist`     | Añade/quita/lista comandos de consola permitidos con patrón seguro   |
-| `panel`         | Publica panel persistente (overview/status/players/maintenance)      |
-| `notifications` | Configura canal, eventos y intervalo                                 |
-| `maintenance`   | Activa/desactiva mantenimiento con confirmación y whitelist opcional |
-| `console-mode`  | Activa modo consola irrestricto solo para dueño del servidor Discord |
-| `audit`         | Muestra auditoría reciente                                           |
+| Subcomando      | Descripción                                                            |
+| --------------- | ---------------------------------------------------------------------- |
+| `setup`         | Activa integración y canales de notificación/auditoría (destino fijo)  |
+| `roles`         | Asigna roles Discord a niveles `owner/admin/moderator/readonly`        |
+| `allowlist`     | Añade/quita/lista comandos de consola permitidos con patrón seguro     |
+| `panel`         | Publica panel persistente (overview/status/players/maintenance)        |
+| `notifications` | Configura canal, eventos y intervalo                                   |
+| `maintenance`   | Activa/desactiva mantenimiento con confirmación y whitelist opcional   |
+| `console-mode`  | Consola irrestricta: solo dueño del servidor Discord o `BOT_OWNER_IDS` |
+| `audit`         | Muestra auditoría reciente                                             |
 
 Consulta [docs/features/minecraft.md](features/minecraft.md).
 
@@ -200,6 +200,6 @@ Consulta [docs/features/minecraft.md](features/minecraft.md).
 - Necesita **Gestionar roles** para autoroles y **Moderar miembros** para silencios de AutoMod.
 - Necesita **Gestionar servidor** para reglas nativas de AutoMod; los comandos de configuración lo exigen a quien los ejecuta.
 - Necesita **Ver canal** y **Enviar mensajes** en cada canal de registro, panel, sugerencias y contador configurado.
-- Bitfield de invitación recomendado: `1078062142`.
+- Bitfield de invitación recomendado: `1101927672886`.
 - Los intents privilegiados `Guild Members` y `Message Content` deben activarse en el Developer Portal. Consulta el [README](../README.md#intents-de-la-pasarela-gateway).
 - Minecraft: RCON es opcional; sin `MINECRAFT_RCON_PASSWORD` solo funcionan status/players/info/version. La consola irrestricta está desactivada por defecto, solo la puede activar el dueño del servidor y nunca permite `stop/restart/reload`.

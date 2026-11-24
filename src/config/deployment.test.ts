@@ -69,3 +69,34 @@ describe('music-free deployment', () => {
     }
   });
 });
+
+describe('documented invite permissions', () => {
+  it('README bitfield matches exactly the documented permission list', async () => {
+    const { PermissionsBitField } = await import('discord.js');
+    const readme = readFileSync(join(root, 'README.md'), 'utf8');
+    const documented = [
+      'ManageRoles',
+      'ManageChannels',
+      'ManageGuild',
+      'ManageMessages',
+      'ModerateMembers',
+      'BanMembers',
+      'KickMembers',
+      'ViewChannel',
+      'SendMessages',
+      'ReadMessageHistory',
+      'EmbedLinks',
+      'AttachFiles',
+      'UseApplicationCommands',
+    ] as const;
+    const expected = new PermissionsBitField([...documented]).bitfield.toString();
+    assert.equal(expected, '1101927672886');
+    assert.match(readme, new RegExp(`bitfield recomendado es \\*\\*\`${expected}\`\\*\\*`));
+    assert.ok(!new PermissionsBitField(BigInt(expected)).has('Administrator'));
+
+    for (const doc of ['deployment.md', 'commands.md']) {
+      const text = readFileSync(join(root, 'docs', doc), 'utf8');
+      assert.match(text, new RegExp(expected), doc);
+    }
+  });
+});

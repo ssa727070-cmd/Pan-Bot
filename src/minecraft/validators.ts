@@ -63,11 +63,35 @@ export const minecraftCommandName = z
   .trim()
   .regex(/^[a-z][a-z0-9:._-]{0,63}$/, 'Nombre de comando inválido');
 
+const MAX_PATTERN_QUANTIFIERS = 2;
+
+/**
+ * Argument patterns for custom console allowlist entries: a small, safe regex
+ * subset (classes, groups, alternation, quantifiers, \d \w \s). Quantified
+ * groups such as `(a+)+` are rejected to avoid catastrophic backtracking, and
+ * backreferences or other escapes are not accepted.
+ */
 export const minecraftArgPattern = z
   .string()
   .trim()
   .max(80)
-  .regex(/^[A-Za-z0-9 _.,:@#+-]*$/, 'Patrón de argumentos no seguro');
+  .regex(/^[A-Za-z0-9 _.,:@#+\-|()[\]?*{}\\]*$/, 'Patrón de argumentos no seguro')
+  .refine((value) => !/\\(?![dws])/.test(value), 'Patrón de argumentos no seguro')
+  .refine((value) => !/\)[*+?{]/.test(value), 'Patrón de argumentos no seguro')
+  // Adjacent quantifiers (`.*.*.*x`, `a?a?a?aaa`) backtrack polynomially or
+  // exponentially. Two quantifiers bound the worst case to O(n²) on ≤500 chars.
+  .refine(
+    (value) => (value.match(/[*+?{]/g) ?? []).length <= MAX_PATTERN_QUANTIFIERS,
+    'Patrón de argumentos no seguro (máximo 2 cuantificadores)',
+  )
+  .refine((value) => {
+    try {
+      new RegExp(`^(?:${value})$`);
+      return true;
+    } catch {
+      return false;
+    }
+  }, 'Patrón de argumentos no seguro');
 
 /** RCON command payloads are line based: control characters are never accepted. */
 export function isSafeRconText(value: string): boolean {

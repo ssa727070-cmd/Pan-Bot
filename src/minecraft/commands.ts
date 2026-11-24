@@ -155,10 +155,11 @@ export function buildMinecraftCommand(
     case 'save':
       return { command: 'save-all', action };
     case 'gamerules': {
-      const rule = requireValid(minecraftGamerule, options.value, 'Gamerule inválida.');
-      const value = options.detail
-        ? requireValid(minecraftGameruleValue, options.detail, 'Valor inválido.')
-        : null;
+      const rule = requireValid(minecraftGamerule, options.gamerule, 'Gamerule inválida.');
+      const value =
+        options.gameruleValue !== undefined && options.gameruleValue.trim() !== ''
+          ? requireValid(minecraftGameruleValue, options.gameruleValue, 'Valor inválido.')
+          : null;
       return value
         ? { command: `gamerule ${rule} ${value}`, action }
         : { command: `gamerule ${rule}`, action };

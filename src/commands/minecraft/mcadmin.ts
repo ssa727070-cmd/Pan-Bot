@@ -1,12 +1,42 @@
-import { ChannelType, PermissionFlagsBits, SlashCommandBuilder } from 'discord.js';
+import {
+  ChannelType,
+  MessageFlags,
+  PermissionFlagsBits,
+  SlashCommandBuilder,
+  type ActionRowBuilder,
+  type ButtonBuilder,
+  type EmbedBuilder,
+  type GuildMember,
+} from 'discord.js';
 import type { Command } from '../../types/command.js';
 import { MinecraftRepository } from '../../database/repositories/minecraftRepository.js';
+import { customCommandError } from '../../minecraft/allowlist.js';
+import { getMinecraftConnection, rconUnavailableMessage } from '../../minecraft/connection.js';
+import { isMinecraftLevel, isMinecraftOwner } from '../../minecraft/permissions.js';
 import {
+  checkMinecraftAccess,
+  createMaintenanceConfirmation,
   executeMinecraftAction,
   sendMinecraftPanel,
-  createMaintenanceConfirmation,
 } from '../../minecraft/service.js';
+import type { MinecraftAction, MinecraftPanelKind } from '../../minecraft/types.js';
 import { successEmbed, errorEmbed, infoEmbed } from '../../utils/embeds.js';
+
+type ConfirmRow = ActionRowBuilder<ButtonBuilder>;
+
+/** The Minecraft permission each /mcadmin subcommand requires (see docs/features/minecraft.md). */
+export const SUBCOMMAND_ACTIONS: Record<string, MinecraftAction> = {
+  setup: 'setup',
+  roles: 'roles',
+  allowlist: 'allowlist',
+  panel: 'panel-send',
+  notifications: 'notifications',
+  maintenance: 'maintenance-status',
+  'console-mode': 'setup',
+  audit: 'audit',
+};
+
+const PANEL_TYPES: readonly MinecraftPanelKind[] = ['overview', 'status', 'players', 'maintenance'];
 
 const command: Command = {
   category: 'minecraft',
@@ -20,25 +50,6 @@ const command: Command = {
         .setDescription('Activa o configura la integración.')
         .addBooleanOption((o) =>
           o.setName('enabled').setDescription('Activar integración').setRequired(true),
-        )
-        .addStringOption((o) =>
-          o.setName('host').setDescription('Host del servidor').setRequired(false),
-        )
-        .addIntegerOption((o) =>
-          o
-            .setName('query_port')
-            .setDescription('Puerto de estado/query')
-            .setMinValue(1)
-            .setMaxValue(65535)
-            .setRequired(false),
-        )
-        .addIntegerOption((o) =>
-          o
-            .setName('rcon_port')
-            .setDescription('Puerto RCON')
-            .setMinValue(1)
-            .setMaxValue(65535)
-            .setRequired(false),
         )
         .addChannelOption((o) =>
           o
@@ -189,135 +200,197 @@ const command: Command = {
 
   async execute(interaction, client) {
     if (!interaction.inGuild() || !interaction.guild) return;
+    // Every subcommand answers privately; defer so slow work never misses Discord's 3 s window.
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+    const guildId = interaction.guildId;
+    const member = interaction.member as GuildMember;
     const repo = new MinecraftRepository(client.db.sqlite);
     const sub = interaction.options.getSubcommand();
+    const respond = async (embeds: EmbedBuilder[], components: ConfirmRow[] = []) => {
+      await interaction.editReply({ embeds, components });
+    };
+
+    const action = SUBCOMMAND_ACTIONS[sub];
+    if (!action) {
+      await respond([errorEmbed('Subcomando desconocido.')]);
+      return;
+    }
+    // Configuration works while the integration is disabled, but always requires
+    // the documented Minecraft level (admin) — not just Discord's Manage Guild.
+    // console-mode is owner-gated below; every subcommand still requires an
+    // authorised guild (MINECRAFT_GUILD_IDS) and, except console-mode, the admin level.
+    const denied =
+      sub === 'console-mode'
+        ? getMinecraftConnection(client, guildId).guildAllowed
+          ? null
+          : {
+              embeds: [
+                errorEmbed(
+                  'Este servidor de Discord no está autorizado para la integración de Minecraft (`MINECRAFT_GUILD_IDS`).',
+                ),
+              ],
+            }
+        : checkMinecraftAccess(client, member, action, { requireEnabled: false });
+    if (denied) {
+      await respond(denied.embeds);
+      return;
+    }
 
     if (sub === 'setup') {
-      repo.updateSettings(interaction.guildId!, {
+      const settings = repo.updateSettings(guildId, {
         enabled: interaction.options.getBoolean('enabled', true),
-        host: interaction.options.getString('host') ?? undefined,
-        queryPort: interaction.options.getInteger('query_port') ?? undefined,
-        rconPort: interaction.options.getInteger('rcon_port') ?? undefined,
         notificationChannelId: interaction.options.getChannel('notificaciones')?.id ?? undefined,
         auditChannelId: interaction.options.getChannel('auditoria')?.id ?? undefined,
       });
-      await interaction.reply({
-        embeds: [
-          successEmbed(
-            'Minecraft configurado',
-            'La configuración se guardó. Recuerda configurar `MINECRAFT_RCON_PASSWORD` en el entorno si necesitas RCON.',
-          ),
-        ],
-        ephemeral: true,
-      });
+      const connection = getMinecraftConnection(client, guildId);
+      const notes = [
+        `Servidor: **${connection.host}:${connection.queryPort}** (fijado por el operador en el entorno).`,
+        connection.rconConfigured
+          ? 'RCON: **disponible**.'
+          : `RCON: **no disponible** — ${rconUnavailableMessage(connection.rconUnavailableReason ?? 'no-password')}`,
+        connection.ignoredOverrides
+          ? '⚠️ Este servidor tenía host/puertos personalizados de v1.1.5. Ya no se usan: el destino solo se configura en el entorno.'
+          : null,
+      ].filter(Boolean);
+      repo.recordAudit({ guildId, adminId: member.id, action: 'setup', result: 'success' });
+      await respond([
+        successEmbed(
+          settings.enabled ? 'Minecraft activado' : 'Minecraft desactivado',
+          notes.join('\n'),
+        ),
+      ]);
       return;
     }
 
     if (sub === 'roles') {
-      const level = interaction.options.getString('nivel', true) as any;
-      const action = interaction.options.getString('accion', true);
-      const role = interaction.options.getRole('rol');
-      if (action === 'list') {
-        const roles = repo.listRoles(interaction.guildId!, level);
-        await interaction.reply({
-          embeds: [
-            infoEmbed(
-              `Roles ${level}`,
-              roles.length
-                ? roles.map((r) => `<@&${r.roleId}>`).join(', ')
-                : 'Sin roles configurados.',
-            ),
-          ],
-          ephemeral: true,
-        });
+      const level = interaction.options.getString('nivel', true);
+      if (!isMinecraftLevel(level)) {
+        await respond([errorEmbed('Nivel inválido.')]);
         return;
       }
-      if (action === 'clear') {
-        repo.clearRoles(interaction.guildId!, level);
-        await interaction.reply({
-          embeds: [successEmbed('Roles limpiados', `Se eliminaron los roles del nivel ${level}.`)],
-          ephemeral: true,
+      const roleAction = interaction.options.getString('accion', true);
+      const role = interaction.options.getRole('rol');
+      if (roleAction === 'list') {
+        const roles = repo.listRoles(guildId, level);
+        await respond([
+          infoEmbed(
+            `Roles ${level}`,
+            roles.length
+              ? roles.map((r) => `<@&${r.roleId}>`).join(', ')
+              : 'Sin roles configurados.',
+          ),
+        ]);
+        return;
+      }
+      // Granting or revoking the owner level is itself an owner-only action.
+      if (level === 'owner' && !isMinecraftOwner(member)) {
+        await respond([
+          errorEmbed('Solo el dueño del servidor puede gestionar roles de nivel owner.'),
+        ]);
+        return;
+      }
+      if (roleAction === 'clear') {
+        repo.clearRoles(guildId, level);
+        repo.recordAudit({
+          guildId,
+          adminId: member.id,
+          action: 'roles',
+          command: `clear ${level}`,
+          result: 'success',
         });
+        await respond([
+          successEmbed('Roles limpiados', `Se eliminaron los roles del nivel ${level}.`),
+        ]);
         return;
       }
       if (!role) {
-        await interaction.reply({ embeds: [errorEmbed('Debes indicar un rol.')], ephemeral: true });
+        await respond([errorEmbed('Debes indicar un rol.')]);
         return;
       }
-      if (action === 'add') repo.addRole(interaction.guildId!, level, role.id);
-      if (action === 'remove') repo.removeRole(interaction.guildId!, level, role.id);
-      await interaction.reply({
-        embeds: [successEmbed('Roles actualizados', `Nivel ${level}: <@&${role.id}>`)],
-        ephemeral: true,
+      if (roleAction === 'add') repo.addRole(guildId, level, role.id);
+      if (roleAction === 'remove') repo.removeRole(guildId, level, role.id);
+      repo.recordAudit({
+        guildId,
+        adminId: member.id,
+        action: 'roles',
+        command: `${roleAction} ${level} ${role.id}`,
+        result: 'success',
       });
+      await respond([successEmbed('Roles actualizados', `Nivel ${level}: <@&${role.id}>`)]);
       return;
     }
 
     if (sub === 'allowlist') {
-      const action = interaction.options.getString('accion', true);
+      const allowAction = interaction.options.getString('accion', true);
       const name = interaction.options.getString('comando')?.toLowerCase().trim();
-      const pattern = interaction.options.getString('patron') ?? '';
-      if (action === 'list') {
-        const entries = repo.listAllowedCommands(interaction.guildId!);
-        await interaction.reply({
-          embeds: [
-            infoEmbed(
-              'Allowlist de consola',
-              entries.length
-                ? entries
-                    .map((e) => `\`${e.command}\`${e.argPattern ? ` — \`${e.argPattern}\`` : ''}`)
-                    .join('\n')
-                : 'Solo comandos read-only por defecto.',
-            ),
-          ],
-          ephemeral: true,
-        });
+      const pattern = interaction.options.getString('patron')?.trim() ?? '';
+      if (allowAction === 'list') {
+        const entries = repo.listAllowedCommands(guildId);
+        await respond([
+          infoEmbed(
+            'Allowlist de consola',
+            entries.length
+              ? entries
+                  .map((e) => `\`${e.command}\`${e.argPattern ? ` — \`${e.argPattern}\`` : ''}`)
+                  .join('\n')
+              : 'Solo comandos read-only por defecto.',
+          ),
+        ]);
         return;
       }
       if (!name) {
-        await interaction.reply({
-          embeds: [errorEmbed('Debes indicar un comando.')],
-          ephemeral: true,
-        });
+        await respond([errorEmbed('Debes indicar un comando.')]);
         return;
       }
-      if (action === 'remove') {
-        repo.removeAllowedCommand(interaction.guildId!, name);
-        await interaction.reply({
-          embeds: [successEmbed('Allowlist actualizada', `Se eliminó \`${name}\`.`)],
-          ephemeral: true,
+      if (allowAction === 'remove') {
+        repo.removeAllowedCommand(guildId, name);
+        repo.recordAudit({
+          guildId,
+          adminId: member.id,
+          action: 'allowlist',
+          command: `remove ${name}`,
+          result: 'success',
         });
+        await respond([successEmbed('Allowlist actualizada', `Se eliminó \`${name}\`.`)]);
         return;
       }
-      if (!/^[a-z][a-z0-9:._-]{0,63}$/.test(name) || !/^[A-Za-z0-9 _.,:@#+-]*$/.test(pattern)) {
-        await interaction.reply({
-          embeds: [errorEmbed('Comando o patrón no seguro.')],
-          ephemeral: true,
+      const problem = customCommandError(name, pattern);
+      if (problem) {
+        repo.recordAudit({
+          guildId,
+          adminId: member.id,
+          action: 'allowlist',
+          command: `add ${name}`,
+          result: 'denied',
+          error: problem,
         });
+        await respond([errorEmbed(problem)]);
         return;
       }
-      repo.addAllowedCommand(interaction.guildId!, name, pattern, interaction.user.id);
-      await interaction.reply({
-        embeds: [successEmbed('Allowlist actualizada', `\`${name}\` permitido.`)],
-        ephemeral: true,
+      repo.addAllowedCommand(guildId, name, pattern, member.id);
+      repo.recordAudit({
+        guildId,
+        adminId: member.id,
+        action: 'allowlist',
+        command: `add ${name}`,
+        result: 'success',
       });
+      await respond([successEmbed('Allowlist actualizada', `\`${name}\` permitido.`)]);
       return;
     }
 
     if (sub === 'panel') {
       const channel = interaction.options.getChannel('canal', true);
-      const kind = (interaction.options.getString('tipo') ?? 'overview') as any;
+      const kindOption = interaction.options.getString('tipo') ?? 'overview';
+      const kind = PANEL_TYPES.find((entry) => entry === kindOption) ?? 'overview';
       const result = await sendMinecraftPanel(client, interaction, channel.id, kind);
-      await interaction.reply({
-        embeds: result.embeds,
-        components: result.components ?? [],
-        ephemeral: true,
-      });
+      await respond(result.embeds);
       return;
     }
 
     if (sub === 'notifications') {
-      repo.updateSettings(interaction.guildId!, {
+      repo.updateSettings(guildId, {
         notificationChannelId: interaction.options.getChannel('canal')?.id ?? undefined,
         notifyJoin: interaction.options.getBoolean('join') ?? undefined,
         notifyLeave: interaction.options.getBoolean('leave') ?? undefined,
@@ -325,56 +398,65 @@ const command: Command = {
         notifyOffline: interaction.options.getBoolean('offline') ?? undefined,
         notifyIntervalSeconds: interaction.options.getInteger('intervalo') ?? undefined,
       });
-      await interaction.reply({
-        embeds: [successEmbed('Notificaciones actualizadas', 'Configuración guardada.')],
-        ephemeral: true,
-      });
+      repo.recordAudit({ guildId, adminId: member.id, action: 'notifications', result: 'success' });
+      await respond([successEmbed('Notificaciones actualizadas', 'Configuración guardada.')]);
       return;
     }
 
     if (sub === 'maintenance') {
       const enabled = interaction.options.getBoolean('enabled', true);
+      const maintenanceAction = enabled ? 'maintenance-enable' : 'maintenance-disable';
+      const maintenanceDenied = checkMinecraftAccess(client, member, maintenanceAction, {
+        requireEnabled: false,
+      });
+      if (maintenanceDenied) {
+        await respond(maintenanceDenied.embeds);
+        return;
+      }
       const whitelist = interaction.options.getBoolean('whitelist') ?? false;
       const message =
-        interaction.options.getString('mensaje') ??
-        repo.getSettings(interaction.guildId!).maintenanceMessage;
+        interaction.options.getString('mensaje')?.slice(0, 300) ??
+        repo.getSettings(guildId).maintenanceMessage;
       const confirmation = createMaintenanceConfirmation({
-        guildId: interaction.guildId!,
-        userId: interaction.user.id,
+        guildId,
+        userId: member.id,
         enabled,
         whitelist,
         message,
       });
-      await interaction.reply({
-        embeds: [confirmation.embed],
-        components: confirmation.components,
-        ephemeral: true,
-      });
+      await respond([confirmation.embed], confirmation.components);
       return;
     }
 
     if (sub === 'console-mode') {
-      if (interaction.guild.ownerId !== interaction.user.id) {
-        await interaction.reply({
-          embeds: [
-            errorEmbed('Solo el dueño del servidor puede cambiar el modo consola irrestricto.'),
-          ],
-          ephemeral: true,
+      if (!isMinecraftOwner(member)) {
+        repo.recordAudit({
+          guildId,
+          adminId: member.id,
+          action: 'console-mode',
+          result: 'denied',
+          error: 'no es owner',
         });
+        await respond([
+          errorEmbed('Solo el dueño del servidor puede cambiar el modo consola irrestricto.'),
+        ]);
         return;
       }
-      repo.updateSettings(interaction.guildId!, {
-        unrestrictedConsole: interaction.options.getBoolean('enabled', true),
+      const unrestricted = interaction.options.getBoolean('enabled', true);
+      repo.updateSettings(guildId, { unrestrictedConsole: unrestricted });
+      repo.recordAudit({
+        guildId,
+        adminId: member.id,
+        action: 'console-mode',
+        command: `unrestricted=${unrestricted}`,
+        result: 'success',
       });
-      await interaction.reply({
-        embeds: [
-          successEmbed(
-            'Modo consola actualizado',
-            'El modo irrestricto sigue bloqueando comandos destructivos como stop/restart.',
-          ),
-        ],
-        ephemeral: true,
-      });
+      await respond([
+        successEmbed(
+          'Modo consola actualizado',
+          'El modo irrestricto sigue bloqueando comandos destructivos como stop/restart, también con namespace (`minecraft:stop`) o dentro de `execute ... run`.',
+        ),
+      ]);
       return;
     }
 
@@ -382,7 +464,7 @@ const command: Command = {
       const result = await executeMinecraftAction(client, interaction, 'audit', {
         ephemeral: true,
       });
-      await interaction.reply({ embeds: result.embeds, ephemeral: true });
+      await respond(result.embeds);
     }
   },
 };

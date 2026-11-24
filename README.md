@@ -1,6 +1,6 @@
 # PAN BOT
 
-**Versión actual: 1.1.5** — [notas de publicación](docs/releases/v1.1.5.md).
+**Versión actual: 1.1.6** — [notas de publicación](docs/releases/v1.1.6.md).
 
 Un bot de Discord profesional y listo para producción, creado con **TypeScript**, **discord.js v14**, **SQLite** y **comandos de barra diagonal (slash commands)**. No depende de Docker ni de servicios externos.
 
@@ -15,7 +15,7 @@ Un bot de Discord profesional y listo para producción, creado con **TypeScript*
 - **Estadísticas (v1.1.0):** miembros/humanos/bots en vivo, entradas, salidas, mensajes y canales contador con throttling, sin contenido de mensajes.
 - **Sugerencias (v1.1.0):** modal, votos 👍/👎 cambiables, estados y respuestas del staff.
 - **AutoMod avanzado (v1.1.0):** spam, menciones, invitaciones, enlaces, palabras y caracteres repetidos con exenciones, acciones y reglas nativas opcionales de Discord.
-- **Administración de Minecraft (v1.1.5):** estado/jugadores del servidor `pansmp.mcserv.world`, acciones admin por RCON con validación estricta, allowlist de consola, permisos por rol de Discord, paneles persistentes, notificaciones, mantenimiento y auditoría en SQLite. Sin economía, rankings, recompensas ni eventos.
+- **Administración de Minecraft (v1.1.5):** estado/jugadores del servidor `pansmp.mcserv.world`, acciones admin por RCON con validación estricta y destino fijado en el entorno (v1.1.6), allowlist de consola, permisos por rol de Discord, paneles persistentes, notificaciones, mantenimiento y auditoría en SQLite. Sin economía, rankings, recompensas ni eventos.
 - Configuración por servidor persistida en SQLite con migraciones versionadas y transaccionales.
 - Configuración de entorno tipada (falla rápido si faltan valores), logging estructurado con pino y apagado graceful.
 - Descubrimiento automático de comandos y eventos, cooldowns por comando y manejo centralizado de errores.
@@ -38,7 +38,7 @@ El bot solicita estos intents; **los dos marcados como privilegiados** deben act
 | **`Guild Members`**   | **Sí**       | Jerarquía de roles en moderación y eventos de miembros                |
 | **`Message Content`** | **Sí**       | Leer el contenido de mensajes para la transcripción de tickets y logs |
 
-Los permisos de invitación que necesita el bot son `Manage Roles`, `Manage Channels`, `Manage Guild`, `Manage Messages`, `Moderate Members`, `Ban Members`, `Kick Members`, `View Channel`, `Send Messages`, `Read Message History`, `Embed Links`, `Attach Files` y `Use Application Commands`. El bitfield recomendado es **`1078062142`**. Si el bot ya está invitado con el bitfield anterior `1101662383126`, puedes conceder los permisos faltantes manualmente. Consulta [docs/deployment.md](docs/deployment.md#3-invitar-el-bot-al-servidor).
+Los permisos de invitación que necesita el bot son `Manage Roles`, `Manage Channels`, `Manage Guild`, `Manage Messages`, `Moderate Members`, `Ban Members`, `Kick Members`, `View Channel`, `Send Messages`, `Read Message History`, `Embed Links`, `Attach Files` y `Use Application Commands`. El bitfield recomendado es **`1101927672886`**, que corresponde exactamente a esa lista. Ojo: el valor `1078062142` publicado en v1.1.0–v1.1.5 era incorrecto, porque incluía **Administrator** y no incluía _Manage Roles_, _Moderate Members_ ni _Use Application Commands_; si invitaste el bot con él, quítale el permiso de administrador y concede los que faltan. Consulta [docs/deployment.md](docs/deployment.md#3-invitar-el-bot-al-servidor).
 
 ## Inicio rápido
 
@@ -126,7 +126,7 @@ PanBot/
 │   └── utils/                   # embeds, formato, canales, errores (+ pruebas)
 ├── docs/commands.md             # Referencia completa de comandos
 ├── docs/features/               # Guías de autoroles, estadísticas, sugerencias, AutoMod y Minecraft
-├── docs/releases/v1.1.5.md      # Notas de la versión actual
+├── docs/releases/v1.1.6.md      # Notas de la versión actual
 ├── docs/deployment.md           # Despliegue en Wispbyte
 ├── .github/workflows/ci.yml     # Verificación en CI
 └── data/                        # Ignorado: archivos SQLite

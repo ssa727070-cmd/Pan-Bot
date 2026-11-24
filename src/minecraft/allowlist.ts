@@ -33,37 +33,159 @@ export const DEFAULT_ALLOWLIST: readonly ConsoleCommandDescriptor[] = [
     name: 'gamerule',
     usage: 'gamerule <regla>',
     description: 'Consulta el valor de una gamerule',
-    pattern: '^[A-Za-z][A-Za-z0-9]*$',
+    pattern: '[A-Za-z][A-Za-z0-9]*',
   },
 ];
 
-/** These roots stay blocked even if an owner enables unrestricted console access. */
-export const FORBIDDEN_COMMAND_ROOTS = new Set([
+/**
+ * Command roots that stay blocked in every mode (default, custom allowlist and
+ * unrestricted), after namespace normalisation: `minecraft:stop` → `stop`.
+ * Lifecycle, persistence, access-control and privilege commands have dedicated,
+ * validated and audited Discord commands instead.
+ */
+export const FORBIDDEN_COMMAND_ROOTS: ReadonlySet<string> = new Set([
+  // Server lifecycle (vanilla, Bukkit/Spigot/Paper, Essentials and proxy aliases).
   'stop',
   'restart',
   'shutdown',
   'end',
+  'estop',
+  'erestart',
   'reload',
   'reloadall',
   'rl',
+  'ereload',
+  'reloaddata',
+  // World persistence.
   'save-all',
   'saveall',
+  'save-off',
+  'save-on',
+  // Access control and privilege.
   'whitelist',
   'ban',
   'ban-ip',
+  'banip',
+  'tempban',
+  'ipban',
   'pardon',
   'pardon-ip',
+  'unban',
+  'unbanip',
   'op',
   'deop',
+  'lp',
+  'luckperms',
+  'lpb',
+  'lpv',
+  'perm',
+  'perms',
+  'permissions',
+  'pex',
+  'permissionsex',
+  // Plugin managers that can unload or replace code.
+  'plugman',
+  'plugmanx',
+]);
+
+/**
+ * Commands that execute other commands. Their payload cannot be validated by a
+ * flat allowlist, so they are blocked outright — except `execute`, whose `run`
+ * clauses are analysed recursively.
+ */
+export const INDIRECT_COMMAND_ROOTS: ReadonlySet<string> = new Set([
+  'sudo',
+  'esudo',
+  'function',
+  'schedule',
+  'run',
+  'asconsole',
+  'console',
+  'sync',
+  'bungee',
+  'send',
+  'script',
+  'skript',
+  'sk',
+  'trigger',
+]);
+
+/** Subcommands that reload or stop a plugin or proxy, e.g. `essentials reload`. */
+const FORBIDDEN_SUBCOMMANDS: ReadonlySet<string> = new Set([
+  'stop',
+  'restart',
+  'shutdown',
+  'reload',
+  'rl',
+  'disable',
+  'unload',
+]);
+
+/** Chat commands whose arguments are free text, so words like "stop" are not subcommands. */
+const MESSAGE_ROOTS: ReadonlySet<string> = new Set([
+  'say',
+  'me',
+  'tell',
+  'msg',
+  'w',
+  'whisper',
+  'tellraw',
+  'broadcast',
+  'bc',
+  'bcast',
+  'title',
 ]);
 
 const SAFE_ROOT = /^[a-z][a-z0-9:._-]{0,63}$/;
 const READ_ONLY_ROOTS = new Set(DEFAULT_ALLOWLIST.map((entry) => entry.name));
+const MAX_EXECUTE_DEPTH = 8;
+
+/** `/minecraft:Stop` → `stop`. Namespaces never change which command is blocked. */
+export function normalizeCommandRoot(token: string): string {
+  const value = token
+    .trim()
+    .replace(/^["'/]+|["']+$/g, '')
+    .toLowerCase();
+  const separator = value.lastIndexOf(':');
+  return separator >= 0 ? value.slice(separator + 1) : value;
+}
+
+/** Returns a reason when the command, or anything it runs, is blocked. */
+export function findBlockedCommand(value: string, depth = 0): string | null {
+  const tokens = value.trim().split(/\s+/).filter(Boolean);
+  const root = normalizeCommandRoot(tokens[0] ?? '');
+  if (!root) return null;
+
+  if (FORBIDDEN_COMMAND_ROOTS.has(root)) {
+    return `\`${root}\` está bloqueado por seguridad (detener/recargar el servidor, persistencia, whitelist, bans o permisos).`;
+  }
+  if (INDIRECT_COMMAND_ROOTS.has(root)) {
+    return `\`${root}\` ejecuta otros comandos y no se permite por consola.`;
+  }
+
+  const subcommand = normalizeCommandRoot(tokens[1] ?? '');
+  if (subcommand && !MESSAGE_ROOTS.has(root) && FORBIDDEN_SUBCOMMANDS.has(subcommand)) {
+    return `El subcomando \`${root} ${subcommand}\` está bloqueado (recargar, detener o desactivar).`;
+  }
+
+  if (root === 'execute') {
+    if (depth >= MAX_EXECUTE_DEPTH) return '`execute` anidado demasiadas veces.';
+    // Every `run` clause starts a new command: analyse each one.
+    for (let index = 1; index < tokens.length; index += 1) {
+      if (normalizeCommandRoot(tokens[index] ?? '') !== 'run') continue;
+      const nested = tokens.slice(index + 1).join(' ');
+      if (!nested) return '`execute run` sin comando no es válido.';
+      const blocked = findBlockedCommand(nested, depth + 1);
+      if (blocked) return blocked;
+    }
+  }
+  return null;
+}
 
 function matchesPattern(args: string, pattern: string | undefined): boolean {
   if (!pattern) return args.length === 0;
   try {
-    return new RegExp(`^${pattern}$`).test(args);
+    return new RegExp(`^(?:${pattern})$`).test(args);
   } catch {
     return false;
   }
@@ -90,13 +212,10 @@ export function validateConsoleInput(
   const name = (rawName ?? '').toLowerCase();
   const args = rest.join(' ');
   if (!SAFE_ROOT.test(name)) return { ok: false, error: 'Nombre de comando no permitido.' };
-  if (FORBIDDEN_COMMAND_ROOTS.has(name)) {
-    return {
-      ok: false,
-      error:
-        'Ese comando está bloqueado por seguridad (no se permite detener o reiniciar el servidor).',
-    };
-  }
+
+  // Applies to every mode before any allowlist lookup.
+  const blocked = findBlockedCommand(`${name} ${args}`);
+  if (blocked) return { ok: false, error: blocked };
 
   const preset = DEFAULT_ALLOWLIST.find((entry) => entry.name === name);
   if (preset) {
@@ -113,6 +232,9 @@ export function validateConsoleInput(
 
   const custom = context.custom.find((entry) => entry.command === name);
   if (custom) {
+    if (!isValidCustomCommand(custom.command, custom.argPattern)) {
+      return { ok: false, error: `La entrada de allowlist \`${name}\` ya no es segura.` };
+    }
     if (!matchesPattern(args, custom.argPattern || undefined)) {
       return {
         ok: false,
@@ -122,7 +244,7 @@ export function validateConsoleInput(
     return {
       ok: true,
       command: `${name} ${args}`.trim(),
-      mutating: !READ_ONLY_ROOTS.has(name),
+      mutating: !READ_ONLY_ROOTS.has(normalizeCommandRoot(name)),
       source: 'custom',
     };
   }
@@ -143,14 +265,22 @@ export function validateConsoleInput(
   return {
     ok: true,
     command: value,
-    mutating: !READ_ONLY_ROOTS.has(name),
+    mutating: !READ_ONLY_ROOTS.has(normalizeCommandRoot(name)),
     source: 'unrestricted',
   };
 }
 
+/** Custom allowlist entries can never name a blocked or indirect command. */
+export function customCommandError(command: string, argPattern: string): string | null {
+  if (!minecraftCommandName.safeParse(command).success) return 'Nombre de comando no seguro.';
+  if (!minecraftArgPattern.safeParse(argPattern).success) return 'Patrón de argumentos no seguro.';
+  const root = normalizeCommandRoot(command);
+  if (FORBIDDEN_COMMAND_ROOTS.has(root) || INDIRECT_COMMAND_ROOTS.has(root) || root === 'execute') {
+    return `\`${command}\` no se puede añadir a la allowlist: está bloqueado por seguridad.`;
+  }
+  return null;
+}
+
 export function isValidCustomCommand(command: string, argPattern: string): boolean {
-  return (
-    minecraftCommandName.safeParse(command).success &&
-    minecraftArgPattern.safeParse(argPattern).success
-  );
+  return customCommandError(command, argPattern) === null;
 }

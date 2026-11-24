@@ -1,4 +1,4 @@
-import { Collection, Events, type Interaction } from 'discord.js';
+import { Collection, Events, MessageFlags, type Interaction } from 'discord.js';
 import type { PanClient } from '../core/client.js';
 import { logger } from '../core/logger.js';
 import { claimTicket, closeTicket, createTopicModal, openTicket } from '../tickets/service.js';
@@ -29,10 +29,13 @@ async function fail(interaction: Interaction, description: string): Promise<void
   const embed = errorEmbed(description);
   try {
     if (interaction.isRepliable()) {
-      if (interaction.deferred || interaction.replied) {
+      if (interaction.isMessageComponent() && (interaction.deferred || interaction.replied)) {
+        // After deferUpdate, editReply would overwrite the panel/prompt message itself.
+        await interaction.followUp({ embeds: [embed], flags: MessageFlags.Ephemeral });
+      } else if (interaction.deferred || interaction.replied) {
         await interaction.editReply({ embeds: [embed] });
       } else {
-        await interaction.reply({ embeds: [embed], ephemeral: true });
+        await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
       }
     }
   } catch (error) {

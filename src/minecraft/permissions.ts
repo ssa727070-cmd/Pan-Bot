@@ -49,46 +49,54 @@ export function actionLevel(action: MinecraftAction): MinecraftLevel {
   return ACTION_LEVEL[action];
 }
 
-function hasDiscordFallback(member: GuildMember, level: MinecraftLevel): boolean {
-  if (member.guild.ownerId === member.id) return true;
-  if (member.permissions.has('Administrator'))
-    return level !== 'owner' || member.guild.ownerId === member.id;
-  if (level === 'moderator')
-    return member.permissions.has('ManageGuild') || member.permissions.has('ModerateMembers');
-  if (level === 'readonly') {
-    return (
-      member.permissions.has('ManageGuild') ||
-      member.permissions.has('ModerateMembers') ||
-      member.permissions.has('ViewAuditLog')
-    );
-  }
-  return false;
+export function isMinecraftLevel(value: unknown): value is MinecraftLevel {
+  return typeof value === 'string' && value in MINECRAFT_LEVEL_RANK;
 }
 
-/** Explicit configured roles take precedence; fall back to Discord permissions if none are configured. */
-export function resolveMinecraftLevel(
-  client: PanClient,
-  member: GuildMember,
-): MinecraftLevel | null {
-  const repository = new MinecraftRepository(client.db.sqlite);
-  const configured = repository.listRoles(member.guild.id);
-  if (configured.length > 0) {
-    let level: MinecraftLevel | null = null;
-    for (const role of configured) {
-      if (!member.roles.cache.has(role.roleId)) continue;
-      if (!level || MINECRAFT_LEVEL_RANK[role.level] > MINECRAFT_LEVEL_RANK[level]) {
-        level = role.level;
-      }
-    }
-    return level;
-  }
-
-  if (member.guild.ownerId === member.id) return 'owner';
+/** Discord permission mapping, used only while the guild has no Minecraft roles configured. */
+function discordPermissionLevel(member: GuildMember): MinecraftLevel | null {
   if (member.permissions.has('Administrator')) return 'admin';
   if (member.permissions.has('ManageGuild') || member.permissions.has('ModerateMembers')) {
     return 'moderator';
   }
+  if (member.permissions.has('ViewAuditLog')) return 'readonly';
   return null;
+}
+
+/**
+ * Resolves the member's Minecraft level.
+ *
+ * - The Discord server owner is always `owner`, so the guild can never lock itself out.
+ * - Once any Minecraft role is configured the configuration is authoritative: only
+ *   those roles grant access and Discord permissions grant nothing.
+ * - With no roles configured, Discord permissions are mapped to levels.
+ */
+export function resolveMinecraftLevel(
+  client: PanClient,
+  member: GuildMember,
+): MinecraftLevel | null {
+  if (member.guild.ownerId === member.id) return 'owner';
+
+  const configured = new MinecraftRepository(client.db.sqlite).listRoles(member.guild.id);
+  if (configured.length === 0) return discordPermissionLevel(member);
+
+  let level: MinecraftLevel | null = null;
+  for (const role of configured) {
+    if (!member.roles.cache.has(role.roleId)) continue;
+    if (!level || MINECRAFT_LEVEL_RANK[role.level] > MINECRAFT_LEVEL_RANK[level]) {
+      level = role.level;
+    }
+  }
+  return level;
+}
+
+export function hasMinecraftLevel(
+  client: PanClient,
+  member: GuildMember,
+  required: MinecraftLevel,
+): boolean {
+  const current = resolveMinecraftLevel(client, member);
+  return current !== null && MINECRAFT_LEVEL_RANK[current] >= MINECRAFT_LEVEL_RANK[required];
 }
 
 export function canManageMinecraft(
@@ -96,14 +104,16 @@ export function canManageMinecraft(
   member: GuildMember,
   action: MinecraftAction,
 ): boolean {
-  const required = actionLevel(action);
-  const current = resolveMinecraftLevel(client, member);
-  if (!current) return hasDiscordFallback(member, required);
-  return MINECRAFT_LEVEL_RANK[current] >= MINECRAFT_LEVEL_RANK[required];
+  return hasMinecraftLevel(client, member, actionLevel(action));
 }
 
-export function isApplicationOwner(member: GuildMember): boolean {
-  // Discord server owner is the authoritative owner inside the guild; this also
-  // gates unrestricted console mode without storing a separate bot-owner ID.
-  return member.guild.ownerId === member.id || member.user.id === env.DISCORD_CLIENT_ID;
+/**
+ * Owner-only features (unrestricted console): the Discord server owner, or a bot
+ * operator listed in BOT_OWNER_IDS. The application/bot ID is never an owner.
+ */
+export function isMinecraftOwner(
+  member: GuildMember,
+  botOwnerIds: readonly string[] = env.BOT_OWNER_IDS,
+): boolean {
+  return member.guild.ownerId === member.id || botOwnerIds.includes(member.id);
 }
