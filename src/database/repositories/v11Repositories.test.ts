@@ -58,7 +58,7 @@ describe('v1.1.0 migrations', () => {
       ]) {
         assert.ok(tables.includes(table), `missing table ${table}`);
       }
-      assert.equal(migrations.length, 4);
+      assert.ok(migrations.length >= 4);
       assert.equal(migrations[2]?.id, '003_autoroles_statistics_suggestions_automod');
       assert.equal(migrations[3]?.id, '004_minecraft_administration');
     });

@@ -14,6 +14,7 @@ const categoryTitles: Record<CommandCategory, string> = {
   suggestions: '💡 Sugerencias',
   automod: '🛡️ AutoMod',
   minecraft: '⛏️ Minecraft',
+  helper: '🤝 Helpers',
 };
 
 const command: Command = {

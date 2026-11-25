@@ -75,9 +75,10 @@ export function isExempt(
   member: GuildMember,
   settings: AutomodSettings,
   exemptions: readonly AutomodExemption[],
-  channelId: string,
+  channelId: string | readonly string[],
   isWebhook = false,
 ): boolean {
+  const channelIds = typeof channelId === 'string' ? [channelId] : channelId;
   if (isWebhook) return true;
   if (member.user.bot) return true;
   if (member.permissions.has(PermissionFlagsBits.Administrator)) return true;
@@ -95,8 +96,23 @@ export function isExempt(
     (entry) =>
       (entry.type === 'role' && member.roles.cache.has(entry.targetId)) ||
       (entry.type === 'user' && entry.targetId === member.id) ||
-      (entry.type === 'channel' && entry.targetId === channelId),
+      (entry.type === 'channel' && channelIds.includes(entry.targetId)),
   );
+}
+
+/**
+ * IDs an exemption can match for a message: the channel itself, its parent category, and
+ * for threads the parent channel (and that channel's category).
+ */
+export function channelScopeIds(message: Message): string[] {
+  const ids = new Set<string>([message.channelId]);
+  const channel = message.channel;
+  if ('parentId' in channel && channel.parentId) ids.add(channel.parentId);
+  if (channel.isThread()) {
+    const parent = channel.parent;
+    if (parent?.parentId) ids.add(parent.parentId);
+  }
+  return [...ids];
 }
 
 function repo(client: PanClient): AutomodRepository {
@@ -122,7 +138,7 @@ export async function applyAutomodAction(
     }
   }
 
-  if (settings.timeoutMinutes > 0 && !nativeHandles && message.member) {
+  if (settings.timeoutMinutes > 0 && !nativeHandles && message.member?.moderatable) {
     try {
       await message.member.timeout(
         timeoutDurationMs(settings.timeoutMinutes),
@@ -152,14 +168,61 @@ export async function applyAutomodAction(
       channelId: message.channel.id,
       rule: match.rule,
       action: actions.join(', ') || 'registrado',
+      detail: match.detail,
     });
     await notifyLogEvent(client, message.guild.id, 'moderation', 'AutoMod: incidencia', [
       { name: 'Regla', value: match.rule },
       { name: 'Miembro', value: `<@${message.author.id}>` },
       { name: 'Canal', value: `<#${message.channel.id}>` },
+      { name: 'Detalle', value: match.detail.slice(0, 200) },
       { name: 'Acciones', value: actions.join(', ') || 'Solo registro' },
     ]);
+    actions.push(...(await applyStrikes(client, message, settings)));
   }
 
   return actions;
+}
+
+/**
+ * Escalates repeat offenders. It respects the role hierarchy: members the bot cannot
+ * moderate or kick are left alone (and the situation is logged) instead of failing silently.
+ */
+export async function applyStrikes(
+  client: PanClient,
+  message: Message,
+  settings: AutomodSettings,
+): Promise<string[]> {
+  if (settings.strikeThreshold <= 0 || !message.guild || !message.member) return [];
+  const member = message.member;
+  const count = repo(client).countRecentIncidents(
+    message.guild.id,
+    member.id,
+    settings.strikeWindowMinutes,
+  );
+  if (count < settings.strikeThreshold) return [];
+  // Only escalate exactly when the threshold is reached to avoid repeating the sanction.
+  if (count > settings.strikeThreshold) return [];
+
+  try {
+    if (settings.strikeAction === 'kick') {
+      if (!member.kickable) {
+        logger.warn({ guildId: message.guild.id }, 'AutoMod strike: member is not kickable');
+        return ['sin expulsar (jerarquía)'];
+      }
+      await member.kick(`AutoMod: ${count} incidencias en ${settings.strikeWindowMinutes} min`);
+      return ['expulsado por reincidencia'];
+    }
+    if (!member.moderatable) {
+      logger.warn({ guildId: message.guild.id }, 'AutoMod strike: member is not moderatable');
+      return ['sin silenciar (jerarquía)'];
+    }
+    await member.timeout(
+      timeoutDurationMs(settings.strikeTimeoutMinutes),
+      `AutoMod: ${count} incidencias en ${settings.strikeWindowMinutes} min`,
+    );
+    return [`silenciado ${settings.strikeTimeoutMinutes}m por reincidencia`];
+  } catch (error) {
+    logger.warn({ error, guildId: message.guild.id }, 'AutoMod strike failed');
+    return [];
+  }
 }

@@ -32,3 +32,6 @@ PanBot-Wispbyte.zip
 .idea/
 .DS_Store
 coverage/
+
+# Claude Code local permissions
+.claude/settings.local.json

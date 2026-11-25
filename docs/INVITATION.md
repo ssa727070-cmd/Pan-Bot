@@ -34,6 +34,7 @@ El `client_id` es el Application ID público de Pan Bot (no es un secreto). El t
 
 - **Administrator**: nunca. Si un enlace antiguo (`1078062142`) lo incluía, quita el permiso al rol del bot.
 - **Manage Threads / Send Messages in Threads**: el código no crea ni gestiona hilos, así que no hacen falta. Si en el futuro se añaden, se documentarán aquí.
+- **v1.2.0 (hilos y AutoMod):** no cambia el valor de permisos de la invitación. AutoMod analiza hilos públicos con _View Channel_ y _Read Message History_; en hilos privados solo ve los mensajes si el bot es miembro. Para borrar necesita _Manage Messages_ y para silenciar _Moderate Members_ (ya incluidos).
 - **View Audit Log**: el bot no lo consulta. (Solo se usa como _criterio de rol_ de los usuarios en Minecraft.)
 - **Manage Nicknames, Manage Webhooks, Create Invite, Add Reactions, Use External Emojis**: no se utilizan.
 

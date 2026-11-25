@@ -12,7 +12,7 @@ const command: Command = {
     .addSubcommand((sub) =>
       sub.setName('status').setDescription('Muestra estado, versión, jugadores y latencia.'),
     )
-    .addSubcommand((sub) => sub.setName('players').setDescription('Muestra jugadores conectados.'))
+    .addSubcommand((sub) => sub.setName('list').setDescription('Muestra los jugadores conectados.'))
     .addSubcommand((sub) => sub.setName('info').setDescription('Muestra información del servidor.'))
     .addSubcommand((sub) =>
       sub.setName('version').setDescription('Muestra versión y software detectado.'),
@@ -37,10 +37,22 @@ const command: Command = {
     )
     .addSubcommand((sub) =>
       sub
-        .setName('pardon')
+        .setName('unban')
         .setDescription('Quita el ban a un jugador.')
         .addStringOption((o) =>
           o.setName('jugador').setDescription('Jugador o UUID').setRequired(true),
+        ),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName('say')
+        .setDescription('Envía un mensaje al chat del servidor de Minecraft.')
+        .addStringOption((o) =>
+          o
+            .setName('mensaje')
+            .setDescription('Mensaje a enviar')
+            .setMaxLength(200)
+            .setRequired(true),
         ),
     )
     .addSubcommand((sub) =>

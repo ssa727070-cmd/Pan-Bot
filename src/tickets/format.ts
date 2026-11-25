@@ -3,22 +3,32 @@ export interface TranscriptMessage {
   author: string;
   content: string;
   attachments: string[];
+  /** Plain-text summaries of embeds, so bot/system notices appear in the transcript. */
+  embeds?: string[];
 }
 
 /** Builds a readable plain-text transcript from ticket messages. */
-export function formatTranscript(messages: TranscriptMessage[], guildName = 'Servidor'): string {
+export function formatTranscript(
+  messages: TranscriptMessage[],
+  guildName = 'Servidor',
+  header: string[] = [],
+): string {
   const lines = messages.map((message) => {
     const timestamp = message.createdAt.toISOString().replace('T', ' ').slice(0, 19);
     const content = message.content || '(sin contenido)';
     const attachments = message.attachments.length
       ? `\n  Adjuntos: ${message.attachments.join(', ')}`
       : '';
-    return `[${timestamp}] ${message.author}: ${content}${attachments}`;
+    const embeds = message.embeds?.length
+      ? message.embeds.map((embed) => `\n  [Embed] ${embed}`).join('')
+      : '';
+    return `[${timestamp}] ${message.author}: ${content}${embeds}${attachments}`;
   });
 
   return [
     `TRANSCRIPTO DE TICKET — ${guildName}`,
     `Generado: ${new Date().toISOString()}`,
+    ...header,
     '════════════════════════════════════════',
     ...lines,
   ].join('\n');
@@ -35,4 +45,9 @@ export function ticketChannelName(number: number, username: string): string {
     .replace(/^-|-$/g, '')
     .slice(0, 20);
   return `ticket-${number}${slug ? `-${slug}` : ''}`;
+}
+
+/** Escapes Discord mentions so transcripts and logs can never ping anybody. */
+export function neutralizeMentions(text: string): string {
+  return text.replace(/@(everyone|here)/g, '@\u200b$1').replace(/<@([!&]?\d+)>/g, '<@\u200b$1>');
 }

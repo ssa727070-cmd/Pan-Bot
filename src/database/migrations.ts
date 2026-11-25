@@ -341,4 +341,121 @@ export const migrations: Migration[] = [
       );
     `,
   },
+  {
+    id: '005_v120_tickets_automod_helper',
+    name: 'Advanced tickets, AutoMod filters, Discord-Minecraft links and helper grants (v1.2.0)',
+    sql: `
+      CREATE TABLE IF NOT EXISTS ticket_settings (
+        guild_id           TEXT PRIMARY KEY,
+        enabled            INTEGER NOT NULL DEFAULT 1,
+        panel_channel_id   TEXT,
+        category_id        TEXT,
+        archive_channel_id TEXT,
+        allow_multiple     INTEGER NOT NULL DEFAULT 0,
+        max_open_per_user  INTEGER NOT NULL DEFAULT 1 CHECK (max_open_per_user BETWEEN 1 AND 10),
+        creator_can_close  INTEGER NOT NULL DEFAULT 1,
+        updated_at         TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+
+      CREATE TABLE IF NOT EXISTS ticket_roles (
+        guild_id  TEXT NOT NULL,
+        kind      TEXT NOT NULL CHECK (kind IN ('support', 'excluded', 'closer')),
+        role_id   TEXT NOT NULL,
+        PRIMARY KEY (guild_id, kind, role_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_ticket_roles_guild ON ticket_roles(guild_id, kind);
+
+      ALTER TABLE tickets ADD COLUMN ticket_number INTEGER;
+      ALTER TABLE tickets ADD COLUMN accepted_by TEXT;
+      ALTER TABLE tickets ADD COLUMN accepted_at TEXT;
+      ALTER TABLE tickets ADD COLUMN claimed_at TEXT;
+      ALTER TABLE tickets ADD COLUMN closed_by TEXT;
+
+      CREATE TABLE IF NOT EXISTS ticket_events (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        guild_id    TEXT NOT NULL,
+        ticket_id   INTEGER NOT NULL,
+        type        TEXT NOT NULL,
+        actor_id    TEXT,
+        detail      TEXT,
+        created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_ticket_events_ticket ON ticket_events(ticket_id, id);
+      CREATE INDEX IF NOT EXISTS idx_tickets_creator ON tickets(guild_id, creator_id, status);
+
+      -- Carry the pre-1.2.0 per-guild ticket configuration over without touching the old columns.
+      INSERT OR IGNORE INTO ticket_settings (guild_id, panel_channel_id, category_id)
+        SELECT guild_id, ticket_panel_channel_id, ticket_category_id
+        FROM guild_settings
+        WHERE ticket_panel_channel_id IS NOT NULL
+           OR ticket_category_id IS NOT NULL
+           OR ticket_support_role_id IS NOT NULL;
+      INSERT OR IGNORE INTO ticket_roles (guild_id, kind, role_id)
+        SELECT guild_id, 'support', ticket_support_role_id
+        FROM guild_settings
+        WHERE ticket_support_role_id IS NOT NULL;
+
+      ALTER TABLE automod_settings ADD COLUMN sensitivity INTEGER NOT NULL DEFAULT 2
+        CHECK (sensitivity BETWEEN 1 AND 3);
+      ALTER TABLE automod_settings ADD COLUMN flood_enabled INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE automod_settings ADD COLUMN similar_enabled INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE automod_settings ADD COLUMN evasion_enabled INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE automod_settings ADD COLUMN caps_enabled INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE automod_settings ADD COLUMN strike_threshold INTEGER NOT NULL DEFAULT 0
+        CHECK (strike_threshold BETWEEN 0 AND 20);
+      ALTER TABLE automod_settings ADD COLUMN strike_window_minutes INTEGER NOT NULL DEFAULT 60
+        CHECK (strike_window_minutes BETWEEN 1 AND 1440);
+      ALTER TABLE automod_settings ADD COLUMN strike_action TEXT NOT NULL DEFAULT 'timeout'
+        CHECK (strike_action IN ('timeout', 'kick'));
+      ALTER TABLE automod_settings ADD COLUMN strike_timeout_minutes INTEGER NOT NULL DEFAULT 60
+        CHECK (strike_timeout_minutes BETWEEN 1 AND 40320);
+
+      CREATE TABLE IF NOT EXISTS automod_list_entries (
+        guild_id TEXT NOT NULL,
+        kind     TEXT NOT NULL CHECK (kind IN ('word_allow', 'domain_allow', 'domain_block', 'invite_allow')),
+        value    TEXT NOT NULL,
+        PRIMARY KEY (guild_id, kind, value)
+      );
+
+      ALTER TABLE automod_incidents ADD COLUMN detail TEXT;
+      CREATE INDEX IF NOT EXISTS idx_automod_incidents_user
+        ON automod_incidents(guild_id, user_id, created_at);
+
+      CREATE TABLE IF NOT EXISTS helper_settings (
+        guild_id       TEXT PRIMARY KEY,
+        enabled        INTEGER NOT NULL DEFAULT 0,
+        group_name     TEXT NOT NULL DEFAULT 'helper',
+        method         TEXT NOT NULL DEFAULT 'luckperms' CHECK (method IN ('luckperms', 'skript')),
+        skript_command TEXT,
+        require_link   INTEGER NOT NULL DEFAULT 0,
+        updated_at     TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+
+      CREATE TABLE IF NOT EXISTS minecraft_links (
+        guild_id    TEXT NOT NULL,
+        discord_id  TEXT NOT NULL,
+        player      TEXT NOT NULL,
+        linked_by   TEXT NOT NULL,
+        created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY (guild_id, discord_id)
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_minecraft_links_player
+        ON minecraft_links(guild_id, lower(player));
+
+      CREATE TABLE IF NOT EXISTS helper_grants (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        guild_id     TEXT NOT NULL,
+        ticket_id    INTEGER,
+        channel_id   TEXT,
+        discord_id   TEXT NOT NULL,
+        player       TEXT NOT NULL,
+        approved_by  TEXT NOT NULL,
+        method       TEXT NOT NULL,
+        result       TEXT NOT NULL CHECK (result IN ('success', 'failure', 'denied')),
+        detail       TEXT,
+        created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_helper_grants_guild ON helper_grants(guild_id, id);
+    `,
+  },
 ];

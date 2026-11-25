@@ -1,4 +1,4 @@
-# Administración de Minecraft — PAN BOT v1.1.6
+# Administración de Minecraft — PAN BOT v1.2.0
 
 Esta integración permite administrar **pansmp.mcserv.world** desde Discord sin exponer credenciales, sin usar economía y sin asumir que RCON o plugins estén instalados.
 
@@ -7,7 +7,7 @@ Esta integración permite administrar **pansmp.mcserv.world** desde Discord sin 
 - **Destino fijo:** host, puerto de estado, puerto RCON y contraseña se configuran **solo** en el entorno del bot. Ningún usuario de Discord puede cambiar a dónde se conecta el bot ni a dónde se envía la contraseña RCON (v1.1.6 eliminó las opciones `host`, `query_port` y `rcon_port` de `/mcadmin setup`; los valores antiguos guardados en la base de datos se ignoran).
 - **Servidores de Discord autorizados:** RCON solo está disponible en los servidores de Discord listados en `MINECRAFT_GUILD_IDS`. Si la lista está vacía, RCON queda desactivado en todos y solo funciona el ping público de estado.
 - **No economía:** no hay balances, tiendas, rankings, recompensas, eventos ni competencias.
-- **RCON opt-in:** si `MINECRAFT_RCON_PASSWORD` está vacío, los comandos de administración RCON quedan desactivados; `status/players/info/version` siguen usando el ping público.
+- **RCON opt-in:** si `MINECRAFT_RCON_PASSWORD` está vacío, los comandos de administración RCON quedan desactivados; `status/list/info/version` siguen usando el ping público.
 - **Consola segura:** `/mc command` solo acepta comandos de la allowlist. Hay comandos bloqueados en **todos** los modos (por defecto, allowlist personalizada e irrestricto):
   - se normalizan los namespaces (`minecraft:stop` se trata como `stop`, igual que `bukkit:reload`);
   - se bloquean detener/reiniciar/recargar (`stop`, `restart`, `reload`, `rl`, `end`…), persistencia (`save-all`, `save-off`, `save-on`), whitelist, bans, op/deop y gestores de permisos (`lp`, `luckperms`, `pex`…);
@@ -62,8 +62,8 @@ En Discord:
 
 Niveles: `readonly`, `moderator`, `admin`, `owner`.
 
-- `readonly`: status, players, info, version, estado del mantenimiento.
-- `moderator`: kick, mute/unmute, whitelist, pardon, time/weather/difficulty/gamemode/teleport/heal/feed/xp/save/gamerules, `/mc message tipo:say|broadcast|announce`.
+- `readonly`: status, list, info, version, estado del mantenimiento.
+- `moderator`: kick, mute/unmute, whitelist, unban, time/weather/difficulty/gamemode/teleport/heal/feed/xp/save/gamerules, `/mc message tipo:say|broadcast|announce`.
 - `admin`: ban, op/deop, consola, y **todos** los subcomandos de `/mcadmin` (setup, roles, allowlist, paneles, notificaciones, mantenimiento, auditoría), además de integraciones.
 - `owner`: el dueño del servidor de Discord siempre tiene este nivel, para que el servidor no pueda quedarse sin acceso. Solo el dueño del servidor de Discord o un operador de `BOT_OWNER_IDS` puede activar la consola irrestricta o gestionar roles de nivel `owner`.
 
@@ -96,3 +96,10 @@ Notificaciones (v1.1.6):
 ## Auditoría
 
 Cada acción crea un registro en `minecraft_audit_log` con: guild, admin Discord, acción, jugador objetivo, comando (con secretos ocultos), resultado y error. Los secretos nunca se guardan. El logger también oculta campos `password`/`token`.
+
+## Novedades v1.2.0
+
+- `/mc list` (antes `players`), `/mc unban` (antes `pardon`) y `/mc say mensaje` (máx. 200 caracteres, sin saltos de línea ni caracteres de control).
+- `/mc op` y `/mc deop` piden confirmación; solo quien la creó puede confirmarla y los permisos se revalidan al confirmar.
+- `/mc` tiene exactamente 25 subcomandos (límite de Discord).
+- Los helpers usan la acción `helper-grant` (nivel admin). Ver [helper](helper.md).

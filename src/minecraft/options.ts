@@ -11,8 +11,10 @@ export interface McInvocation {
   options: MinecraftActionOptions;
 }
 
-const READ_ONLY = new Set(['status', 'players', 'info', 'version', 'save']);
-const PLAYER_ONLY = new Set(['pardon', 'op', 'deop', 'unmute', 'heal', 'feed']);
+const READ_ONLY = new Set(['status', 'info', 'version', 'save']);
+const PLAYER_ONLY = new Set(['op', 'deop', 'unmute', 'heal', 'feed']);
+/** v1.2.0 subcommand names mapped to the existing action names (the old ones stay valid). */
+const SUBCOMMAND_ALIASES: Record<string, string> = { list: 'players', unban: 'pardon' };
 const WHITELIST_ACTIONS: Record<string, MinecraftAction> = {
   add: 'whitelist-add',
   remove: 'whitelist-remove',
@@ -33,7 +35,15 @@ function str(reader: McOptionReader, name: string): string | undefined {
  * subcommand reads only its own options, so values can never leak between fields
  * (v1.1.5 sent the gamerule *value* as the rule name).
  */
-export function translateMcInvocation(subcommand: string, reader: McOptionReader): McInvocation {
+export function translateMcInvocation(rawSubcommand: string, reader: McOptionReader): McInvocation {
+  const subcommand = SUBCOMMAND_ALIASES[rawSubcommand] ?? rawSubcommand;
+  if (subcommand === 'players') return { action: 'players', options: {} };
+  if (subcommand === 'pardon') {
+    return { action: 'pardon', options: { player: str(reader, 'jugador') } };
+  }
+  if (subcommand === 'say') {
+    return { action: 'say', options: { message: str(reader, 'mensaje') } };
+  }
   if (READ_ONLY.has(subcommand)) {
     return { action: subcommand as MinecraftAction, options: {} };
   }

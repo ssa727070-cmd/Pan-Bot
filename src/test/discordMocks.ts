@@ -34,7 +34,10 @@ export function mockMember(input: {
     id: input.id,
     guild: input.guild,
     user: { id: input.id },
-    roles: { cache: { has: (id: string) => roles.has(id) }, set: roles },
+    roles: {
+      cache: { has: (id: string) => roles.has(id), keys: () => roles.values() },
+      set: roles,
+    },
     permissions: { has: (perm: string) => perms.has(perm) },
   };
 }
@@ -75,17 +78,21 @@ export function mockChatInput(input: {
   subcommand: string;
   options?: Record<string, string | number | boolean | null | undefined>;
   recorder?: Recorder;
+  channelId?: string;
 }): any {
   const recorder = input.recorder ?? createRecorder();
   const values = input.options ?? {};
   const interaction = baseInteraction(input.member, recorder);
   interaction.recorder = recorder;
+  interaction.channelId = input.channelId ?? null;
+  interaction.memberPermissions = input.member.permissions;
   interaction.options = {
     getSubcommand: () => input.subcommand,
     getString: (name: string) => (typeof values[name] === 'string' ? values[name] : null),
     getInteger: (name: string) => (typeof values[name] === 'number' ? values[name] : null),
     getBoolean: (name: string) => (typeof values[name] === 'boolean' ? values[name] : null),
     getChannel: (name: string) => (typeof values[name] === 'string' ? { id: values[name] } : null),
+    getUser: (name: string) => (typeof values[name] === 'string' ? { id: values[name] } : null),
     getRole: (name: string) => (typeof values[name] === 'string' ? { id: values[name] } : null),
   };
   return interaction;

@@ -18,7 +18,8 @@ export type CommandCategory =
   | 'statistics'
   | 'suggestions'
   | 'automod'
-  | 'minecraft';
+  | 'minecraft'
+  | 'helper';
 
 /** Contract shared by every slash command in src/commands. */
 export interface Command {

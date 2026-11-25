@@ -41,6 +41,7 @@ const ACTION_LEVEL: Record<MinecraftAction, MinecraftLevel> = {
   op: 'admin',
   deop: 'admin',
   console: 'admin',
+  'helper-grant': 'admin',
   'maintenance-enable': 'admin',
   'maintenance-disable': 'admin',
 };

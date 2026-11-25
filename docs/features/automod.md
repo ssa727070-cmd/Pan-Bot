@@ -1,4 +1,4 @@
-# AutoMod avanzado — PAN BOT v1.1.0
+# AutoMod avanzado — PAN BOT v1.2.0
 
 Filtrado configurable por servidor. **Todos los filtros y el silencio (timeout) están desactivados por defecto**. Solo se aplican las acciones que el admin elige explícitamente.
 
@@ -71,3 +71,19 @@ Todos los subcomandos requieren `Manage Guild`. El bot necesita `Manage Messages
 - Las reglas nativas existentes se emparejan por nombre: cambiar un umbral no reescribe la regla de Discord. Desactiva y vuelve a activar `nativo` o edítala en Discord.
 - No se guarda el contenido de los mensajes en `automod_incidents`, solo la regla, canal, usuario y acciones aplicadas.
 - Discord puede denegar la creación de reglas nativas por permisos, límite del servidor o funciones no disponibles; se degrada con elegancia.
+
+## Novedades v1.2.0
+
+- **Reglas nuevas:** `flood` (mensajes muy rápidos), `similar` (mensajes casi idénticos), `caps` (exceso de mayúsculas) y evasión de filtros: se normalizan leet (`p4l4br4`), separadores, repeticiones, homoglifos, fullwidth y caracteres invisibles. Zalgo cuenta como `repeated`.
+- **Sensibilidad** 1–3 (`/automod avanzado sensibilidad`); 2 equivale al comportamiento de v1.1.
+- **Listas por servidor** (`/automod listas`): `word_allow`, `domain_allow`, `domain_block`, `invite_allow`.
+- **Strikes** (`/automod strikes`): N incidencias en M minutos → silenciar o expulsar. Solo se aplica si la jerarquía y los permisos del bot lo permiten.
+- **Excepciones** por rol, usuario, canal, categoría y el canal padre de un hilo.
+- **Mensajes editados** se vuelven a analizar durante 10 minutos tras enviarse.
+- Cada incidencia guarda la regla y un detalle (`automod_incidents.detail`).
+
+### Qué no se promete
+
+- Sin el intent **Message Content** el bot no ve el texto; sin **Gestionar mensajes** no puede borrar; sin **Moderar miembros** no puede silenciar; no puede sancionar a quien tenga un rol igual o superior.
+- Los hilos privados donde el bot no es miembro no generan eventos.
+- Las reglas `domain_block`, `flood`, `similar`, `caps`, evasión y strikes las aplica el bot; **no** se sincronizan con el AutoMod nativo de Discord.

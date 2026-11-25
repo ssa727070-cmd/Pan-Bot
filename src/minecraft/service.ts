@@ -112,7 +112,10 @@ function asMember(interaction: MinecraftInteraction): GuildMember | null {
   return member as GuildMember;
 }
 
-function ensureGuild(interaction: MinecraftInteraction): { guild: Guild; member: GuildMember } {
+export function ensureGuild(interaction: MinecraftInteraction): {
+  guild: Guild;
+  member: GuildMember;
+} {
   if (!interaction.inGuild() || !interaction.guild)
     throw new Error('Este comando solo funciona en servidores.');
   const member = asMember(interaction);
@@ -450,7 +453,7 @@ export async function renderMinecraftPanel(
   };
 }
 
-function confirmationPrompt(token: string, title: string, description: string) {
+export function confirmationPrompt(token: string, title: string, description: string) {
   return {
     ephemeral: true,
     embeds: [warningEmbed(title, description)],
@@ -708,6 +711,21 @@ export async function executeMinecraftAction(
         );
       }
 
+      if (action === 'op' || action === 'deop') {
+        const token = createConfirmation({
+          guildId,
+          userId: member.id,
+          action: { kind: action, player: built.targetPlayer ?? '' },
+        });
+        return confirmationPrompt(
+          token,
+          action === 'op' ? 'Confirmar OP' : 'Confirmar quitar OP',
+          action === 'op'
+            ? `Vas a dar **OP** (control total del servidor) a **${built.targetPlayer}**.\nComando: \`${built.command}\``
+            : `Vas a quitar **OP** a **${built.targetPlayer}**.\nComando: \`${built.command}\``,
+        );
+      }
+
       return performRconCommand(client, member, built, { ephemeral: options.ephemeral ?? true });
     }
 
@@ -821,6 +839,12 @@ function confirmationActionName(action: MinecraftConfirmationAction): MinecraftA
   switch (action.kind) {
     case 'ban':
       return 'ban';
+    case 'op':
+      return 'op';
+    case 'deop':
+      return 'deop';
+    case 'helper':
+      return 'helper-grant';
     case 'console':
       return 'console';
     case 'maintenance':
@@ -849,13 +873,24 @@ export async function applyConfirmedAction(
 
   const denied = checkMinecraftAccess(client, member, actionName, {
     requireEnabled: action.kind !== 'maintenance',
-    target: action.kind === 'ban' ? action.player : null,
+    target:
+      action.kind === 'ban' ||
+      action.kind === 'op' ||
+      action.kind === 'deop' ||
+      action.kind === 'helper'
+        ? action.player
+        : null,
     command: action.kind === 'console' ? action.command : null,
   });
   if (denied) return denied;
 
   try {
-    if (action.kind === 'console' || action.kind === 'ban') {
+    if (
+      action.kind === 'console' ||
+      action.kind === 'ban' ||
+      action.kind === 'op' ||
+      action.kind === 'deop'
+    ) {
       const connection = getMinecraftConnection(client, guild.id);
       if (connection.rconUnavailableReason) return rconMissing(connection.rconUnavailableReason);
     }
@@ -883,6 +918,20 @@ export async function applyConfirmedAction(
         reason: action.reason ?? undefined,
       });
       return performRconCommand(client, member, built);
+    }
+
+    if (action.kind === 'helper') {
+      // Loaded lazily: helper/grant.ts imports this module, so a static import would be circular.
+      const { applyHelperGrant } = await import('../helper/grant.js');
+      return applyHelperGrant(client, interaction, action);
+    }
+
+    if (action.kind === 'op' || action.kind === 'deop') {
+      return performRconCommand(
+        client,
+        member,
+        buildMinecraftCommand(action.kind, { player: action.player }),
+      );
     }
 
     const before = repo(client).getSettings(guild.id);

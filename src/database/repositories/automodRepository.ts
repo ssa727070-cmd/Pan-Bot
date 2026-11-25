@@ -19,6 +19,26 @@ export interface AutomodSettings {
   timeoutMinutes: number;
   logIncidents: boolean;
   nativeRules: boolean;
+  /** 1 = lenient, 2 = default (same thresholds as v1.1), 3 = strict. */
+  sensitivity: number;
+  floodEnabled: boolean;
+  similarEnabled: boolean;
+  evasionEnabled: boolean;
+  capsEnabled: boolean;
+  /** Incidents within the window that trigger escalation; 0 disables strikes. */
+  strikeThreshold: number;
+  strikeWindowMinutes: number;
+  strikeAction: 'timeout' | 'kick';
+  strikeTimeoutMinutes: number;
+}
+
+export type AutomodListKind = 'word_allow' | 'domain_allow' | 'domain_block' | 'invite_allow';
+
+export interface AutomodLists {
+  wordAllow: string[];
+  domainAllow: string[];
+  domainBlock: string[];
+  inviteAllow: string[];
 }
 
 export type AutomodExemptionType = 'role' | 'channel' | 'user';
@@ -36,6 +56,7 @@ export interface AutomodIncident {
   channelId: string | null;
   rule: string;
   action: string;
+  detail: string | null;
   createdAt: string;
 }
 
@@ -58,6 +79,15 @@ interface AutomodSettingsRow {
   timeout_minutes: number;
   log_incidents: number;
   native_rules: number;
+  sensitivity: number;
+  flood_enabled: number;
+  similar_enabled: number;
+  evasion_enabled: number;
+  caps_enabled: number;
+  strike_threshold: number;
+  strike_window_minutes: number;
+  strike_action: 'timeout' | 'kick';
+  strike_timeout_minutes: number;
 }
 
 interface AutomodIncidentRow {
@@ -67,6 +97,7 @@ interface AutomodIncidentRow {
   channel_id: string | null;
   rule: string;
   action: string;
+  detail: string | null;
   created_at: string;
 }
 
@@ -90,6 +121,15 @@ function toSettings(row: AutomodSettingsRow): AutomodSettings {
     timeoutMinutes: row.timeout_minutes,
     logIncidents: row.log_incidents === 1,
     nativeRules: row.native_rules === 1,
+    sensitivity: row.sensitivity,
+    floodEnabled: row.flood_enabled === 1,
+    similarEnabled: row.similar_enabled === 1,
+    evasionEnabled: row.evasion_enabled === 1,
+    capsEnabled: row.caps_enabled === 1,
+    strikeThreshold: row.strike_threshold,
+    strikeWindowMinutes: row.strike_window_minutes,
+    strikeAction: row.strike_action,
+    strikeTimeoutMinutes: row.strike_timeout_minutes,
   };
 }
 
@@ -111,6 +151,15 @@ const SETTINGS_COLUMNS: Record<keyof Omit<AutomodSettings, 'guildId'>, string> =
   timeoutMinutes: 'timeout_minutes',
   logIncidents: 'log_incidents',
   nativeRules: 'native_rules',
+  sensitivity: 'sensitivity',
+  floodEnabled: 'flood_enabled',
+  similarEnabled: 'similar_enabled',
+  evasionEnabled: 'evasion_enabled',
+  capsEnabled: 'caps_enabled',
+  strikeThreshold: 'strike_threshold',
+  strikeWindowMinutes: 'strike_window_minutes',
+  strikeAction: 'strike_action',
+  strikeTimeoutMinutes: 'strike_timeout_minutes',
 };
 
 export class AutomodRepository {
@@ -141,6 +190,15 @@ export class AutomodRepository {
       timeoutMinutes: 0,
       logIncidents: true,
       nativeRules: false,
+      sensitivity: 2,
+      floodEnabled: false,
+      similarEnabled: false,
+      evasionEnabled: false,
+      capsEnabled: false,
+      strikeThreshold: 0,
+      strikeWindowMinutes: 60,
+      strikeAction: 'timeout',
+      strikeTimeoutMinutes: 60,
     };
   }
 
@@ -228,13 +286,68 @@ export class AutomodRepository {
     channelId: string | null;
     rule: string;
     action: string;
+    detail?: string | null;
   }): void {
     this.db
       .prepare(
-        `INSERT INTO automod_incidents (guild_id, user_id, channel_id, rule, action)
-         VALUES (?, ?, ?, ?, ?)`,
+        `INSERT INTO automod_incidents (guild_id, user_id, channel_id, rule, action, detail)
+         VALUES (?, ?, ?, ?, ?, ?)`,
       )
-      .run(input.guildId, input.userId, input.channelId, input.rule, input.action);
+      .run(
+        input.guildId,
+        input.userId,
+        input.channelId,
+        input.rule,
+        input.action,
+        input.detail ?? null,
+      );
+  }
+
+  /** Incidents of one member in this guild during the last `minutes` minutes. */
+  public countRecentIncidents(guildId: string, userId: string, minutes: number): number {
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) AS total FROM automod_incidents
+         WHERE guild_id = ? AND user_id = ? AND created_at >= datetime('now', ?)`,
+      )
+      .get(guildId, userId, `-${Math.max(1, Math.floor(minutes))} minutes`) as { total: number };
+    return row.total;
+  }
+
+  public addListEntry(guildId: string, kind: AutomodListKind, value: string): boolean {
+    return (
+      this.db
+        .prepare(
+          'INSERT OR IGNORE INTO automod_list_entries (guild_id, kind, value) VALUES (?, ?, ?)',
+        )
+        .run(guildId, kind, value.toLowerCase()).changes > 0
+    );
+  }
+
+  public removeListEntry(guildId: string, kind: AutomodListKind, value: string): boolean {
+    return (
+      this.db
+        .prepare('DELETE FROM automod_list_entries WHERE guild_id = ? AND kind = ? AND value = ?')
+        .run(guildId, kind, value.toLowerCase()).changes > 0
+    );
+  }
+
+  public listEntries(guildId: string, kind: AutomodListKind): string[] {
+    const rows = this.db
+      .prepare(
+        'SELECT value FROM automod_list_entries WHERE guild_id = ? AND kind = ? ORDER BY value',
+      )
+      .all(guildId, kind) as Array<{ value: string }>;
+    return rows.map((row) => row.value);
+  }
+
+  public getLists(guildId: string): AutomodLists {
+    return {
+      wordAllow: this.listEntries(guildId, 'word_allow'),
+      domainAllow: this.listEntries(guildId, 'domain_allow'),
+      domainBlock: this.listEntries(guildId, 'domain_block'),
+      inviteAllow: this.listEntries(guildId, 'invite_allow'),
+    };
   }
 
   public listIncidents(guildId: string, limit = 10): AutomodIncident[] {
@@ -248,6 +361,7 @@ export class AutomodRepository {
       channelId: row.channel_id,
       rule: row.rule,
       action: row.action,
+      detail: row.detail,
       createdAt: row.created_at,
     }));
   }

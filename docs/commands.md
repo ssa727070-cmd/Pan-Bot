@@ -62,7 +62,9 @@ Las advertencias se almacenan en la tabla `warnings` y permanecen hasta que se d
 
 Ejemplo: `¡Bienvenido {user} a {server}! Ya somos {memberCount} miembros.`
 
-## Tickets (🔒 `Manage Guild`)
+## Tickets (🔒 configuración: `Manage Guild`; `add`/`remove`: equipo de soporte)
+
+Detalle completo en [tickets](features/tickets.md). Subcomandos: `setup`, `panel`, `roles`, `archivo`, `opciones`, `estado`, `add`, `remove`.
 
 | Comando          | Descripción                                                     | Opciones                                      |
 | ---------------- | --------------------------------------------------------------- | --------------------------------------------- |
@@ -78,6 +80,10 @@ Ejemplo: `¡Bienvenido {user} a {server}! Ya somos {memberCount} miembros.`
 3. El equipo de soporte puede pulsar **Reclamar ticket**.
 4. El creador o el soporte puede pulsar **Cerrar ticket**: se genera un transcripto, se envía al registro y se elimina el canal.
 5. Solo se permite un ticket abierto por usuario a la vez.
+
+## Helpers
+
+`/helper aceptar | vincular | desvincular | config | estado`. Ver [helper](features/helper.md).
 
 ## Registros / Logs (🔒 `Manage Guild`)
 
@@ -162,13 +168,13 @@ Consulta [docs/features/automod.md](features/automod.md).
 | Subcomando                        | Nivel mínimo | Descripción                                                          | Dependencias                                             |
 | --------------------------------- | ------------ | -------------------------------------------------------------------- | -------------------------------------------------------- |
 | `status`                          | readonly     | Estado online/offline, host, versión, software, jugadores y latencia | Ping público; RCON no requerido                          |
-| `players`                         | readonly     | Conteo y nombres visibles                                            | Ping público                                             |
+| `list`                            | readonly     | Conteo y nombres visibles                                            | Ping público                                             |
 | `info` / `version`                | readonly     | Información y versión/software detectado                             | Ping público                                             |
 | `kick`                            | moderator    | Expulsa a un jugador                                                 | RCON                                                     |
 | `ban`                             | admin        | Banea a un jugador (requiere confirmación)                           | RCON                                                     |
-| `pardon`                          | moderator    | Quita ban                                                            | RCON                                                     |
+| `unban`                           | moderator    | Quita ban                                                            | RCON                                                     |
 | `whitelist (add/remove/list)`     | moderator    | Gestiona whitelist                                                   | RCON                                                     |
-| `op` / `deop`                     | admin        | Gestiona operadores                                                  | RCON                                                     |
+| `op` / `deop`                     | admin        | Gestiona operadores (requiere confirmación)                          | RCON                                                     |
 | `mute` / `unmute`                 | moderator    | Silencia/desilencia                                                  | Plugin (EssentialsX/LuckPerms)                           |
 | `time` / `weather` / `difficulty` | moderator    | Cambios de mundo                                                     | RCON                                                     |
 | `gamemode` / `teleport` / `xp`    | moderator    | Gestión de jugadores                                                 | RCON                                                     |

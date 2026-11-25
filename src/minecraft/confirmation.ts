@@ -3,7 +3,15 @@ import { randomUUID } from 'node:crypto';
 export type MinecraftConfirmationAction =
   | { kind: 'maintenance'; enabled: boolean; whitelist: boolean; message: string }
   | { kind: 'console'; command: string }
-  | { kind: 'ban'; player: string; reason: string | null };
+  | { kind: 'ban'; player: string; reason: string | null }
+  | { kind: 'op'; player: string }
+  | { kind: 'deop'; player: string }
+  | {
+      kind: 'helper';
+      ticketChannelId: string;
+      discordId: string;
+      player: string;
+    };
 
 interface PendingConfirmation {
   guildId: string;

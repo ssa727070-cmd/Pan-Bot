@@ -63,6 +63,7 @@ export type MinecraftAction =
   | 'allowlist'
   | 'audit'
   | 'integrations'
+  | 'helper-grant'
   | 'setup';
 
 export interface MinecraftStatus {

@@ -4,6 +4,7 @@ import { logger } from '../core/logger.js';
 import { AutomodRepository } from '../database/repositories/automodRepository.js';
 import { syncNativeRules } from '../automod/nativeRules.js';
 import { refreshStatsChannels } from '../statistics/service.js';
+import { reconcileTickets } from '../tickets/service.js';
 import { startMinecraftMonitor } from '../minecraft/monitor.js';
 import type { BotEvent } from '../types/event.js';
 
@@ -41,6 +42,11 @@ const event: BotEvent = {
       }
     }, STATS_INTERVAL_MS);
     client.statsTimer.unref();
+
+    void reconcileTickets(client).then(
+      (result) => logger.info(result, 'Tickets reconciliados tras el arranque'),
+      (error: unknown) => logger.warn({ error }, 'Fallo al reconciliar tickets'),
+    );
 
     startMinecraftMonitor(client);
   },

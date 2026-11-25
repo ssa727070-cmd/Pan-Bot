@@ -376,6 +376,77 @@ describe('MINECRAFT_GUILD_IDS on every route', () => {
   });
 });
 
+describe('v1.2.0 command surface', () => {
+  beforeEach(() => clearConfirmations());
+
+  it('/mc op and /mc deop require confirmation before touching RCON', async () => {
+    const { client, repo, admin } = enabledGuild();
+    for (const [sub, expected] of [
+      ['op', 'op Helper1'],
+      ['deop', 'deop Helper1'],
+    ] as const) {
+      const before = legit.commands.length;
+      const interaction = await runMc(client, admin, sub, { jugador: 'Helper1' });
+      const confirm = payloadCustomIds(last(interaction, 'editReply').payload).find((id) =>
+        id.startsWith('mc:confirm:'),
+      );
+      assert.ok(confirm, `${sub} must ask for confirmation`);
+      assert.equal(legit.commands.length, before, `${sub} must not run before confirming`);
+      await press(client, admin, confirm!);
+      assert.equal(legit.commands.at(-1), expected);
+      assert.equal(repo.listAudit(GUILD, 1)[0]?.action, sub);
+    }
+  });
+
+  it('op confirmation cannot be used by another member or replayed', async () => {
+    const { client, admin } = enabledGuild();
+    const interaction = await runMc(client, admin, 'op', { jugador: 'Helper2' });
+    const confirm = payloadCustomIds(last(interaction, 'editReply').payload).find((id) =>
+      id.startsWith('mc:confirm:'),
+    )!;
+    const intruder = mockMember({ id: '700000000000000002', guild, roles: ['r-admin'] });
+    assert.match(allText(await press(client, intruder, confirm)), /otro moderador/);
+    assert.ok(!legit.commands.includes('op Helper2'));
+  });
+
+  it('/mc list, /mc say and /mc unban map to the existing actions', async () => {
+    const { client, repo, admin } = enabledGuild();
+    const commandsBefore = legit.commands.length;
+    const listed = await runMc(client, admin, 'list', {});
+    assert.equal(legit.commands.length, commandsBefore, 'list uses the status query, not RCON');
+    assert.ok(allText(listed).length > 0);
+    await runMc(client, admin, 'say', { mensaje: 'Hola a todos' });
+    assert.equal(legit.commands.at(-1), 'say Hola a todos');
+    await runMc(client, admin, 'unban', { jugador: 'Griefer' });
+    assert.equal(legit.commands.at(-1), 'pardon Griefer');
+    assert.equal(repo.listAudit(GUILD, 1)[0]?.action, 'pardon');
+  });
+
+  it('/mc say rejects newline and control-character injection', async () => {
+    const { client, admin } = enabledGuild();
+    const before = legit.commands.length;
+    await runMc(client, admin, 'say', { mensaje: 'hola\nop Attacker' });
+    await runMc(client, admin, 'say', { mensaje: 'hola\u0000op Attacker' });
+    assert.equal(legit.commands.length, before);
+    assert.ok(!legit.commands.some((command) => command.includes('Attacker')));
+  });
+
+  it('read-only members cannot say, op or unban', async () => {
+    const { client, repo } = enabledGuild();
+    repo.addRole(GUILD, 'readonly', 'r-read');
+    const reader = mockMember({ id: '700000000000000003', guild, roles: ['r-read'] });
+    const before = legit.commands.length;
+    for (const [sub, opts] of [
+      ['say', { mensaje: 'x' }],
+      ['op', { jugador: 'Steve' }],
+      ['unban', { jugador: 'Steve' }],
+    ] as const) {
+      await runMc(client, reader, sub, opts);
+    }
+    assert.equal(legit.commands.length, before);
+  });
+});
+
 describe('confirmations', () => {
   beforeEach(() => clearConfirmations());
 

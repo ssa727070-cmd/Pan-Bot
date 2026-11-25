@@ -41,6 +41,7 @@ export function softwareLabel(software: MinecraftSoftware): string {
 export interface PluginCapabilities {
   detected: boolean;
   luckPerms: boolean;
+  skript: boolean;
   essentialsX: boolean;
   placeholderApi: boolean;
   vault: boolean;
@@ -52,6 +53,7 @@ export function detectPlugins(pluginListOutput: string): PluginCapabilities {
   return {
     detected: value.trim().length > 0,
     luckPerms: value.includes('luckperms'),
+    skript: /\bskript\b/.test(value),
     essentialsX: value.includes('essentialsx') || value.includes('essentials'),
     placeholderApi: value.includes('placeholderapi'),
     vault: value.includes('vault'),

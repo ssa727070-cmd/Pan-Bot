@@ -1,6 +1,6 @@
 # PAN BOT
 
-**Versión actual: 1.1.6** — [notas de publicación](docs/releases/v1.1.6.md).
+**Versión actual: 1.2.0** — [notas de publicación](docs/releases/v1.2.0.md), [CHANGELOG](CHANGELOG.md).
 
 Un bot de Discord profesional y listo para producción, creado con **TypeScript**, **discord.js v14**, **SQLite** y **comandos de barra diagonal (slash commands)**. No depende de Docker ni de servicios externos.
 
@@ -15,6 +15,7 @@ Un bot de Discord profesional y listo para producción, creado con **TypeScript*
 - **Estadísticas (v1.1.0):** miembros/humanos/bots en vivo, entradas, salidas, mensajes y canales contador con throttling, sin contenido de mensajes.
 - **Sugerencias (v1.1.0):** modal, votos 👍/👎 cambiables, estados y respuestas del staff.
 - **AutoMod avanzado (v1.1.0):** spam, menciones, invitaciones, enlaces, palabras y caracteres repetidos con exenciones, acciones y reglas nativas opcionales de Discord.
+- **v1.2.0:** [tickets avanzados](docs/features/tickets.md), [AutoMod ampliado](docs/features/automod.md), [`/helper`](docs/features/helper.md) con LuckPerms/Skript y estado de módulos en `/settings view`. Todo es por servidor (`guild_id`), sin IDs fijos; el bot se invita con el enlace de [INVITATION](docs/INVITATION.md).
 - **Administración de Minecraft (v1.1.5):** estado/jugadores del servidor `pansmp.mcserv.world`, acciones admin por RCON con validación estricta y destino fijado en el entorno (v1.1.6), allowlist de consola, permisos por rol de Discord, paneles persistentes, notificaciones, mantenimiento y auditoría en SQLite. Sin economía, rankings, recompensas ni eventos.
 - Configuración por servidor persistida en SQLite con migraciones versionadas y transaccionales.
 - Configuración de entorno tipada (falla rápido si faltan valores), logging estructurado con pino y apagado graceful.
@@ -126,7 +127,7 @@ PanBot/
 │   └── utils/                   # embeds, formato, canales, errores (+ pruebas)
 ├── docs/commands.md             # Referencia completa de comandos
 ├── docs/features/               # Guías de autoroles, estadísticas, sugerencias, AutoMod y Minecraft
-├── docs/releases/v1.1.6.md      # Notas de la versión actual
+├── docs/releases/v1.2.0.md      # Notas de la versión actual
 ├── docs/deployment.md           # Despliegue en Wispbyte
 ├── .github/workflows/ci.yml     # Verificación en CI
 └── data/                        # Ignorado: archivos SQLite

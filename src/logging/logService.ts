@@ -1,6 +1,7 @@
 import { EmbedBuilder, type APIEmbedField } from 'discord.js';
 import type { PanClient } from '../core/client.js';
 import { GuildSettingsRepository } from '../database/repositories/guildSettings.js';
+import { TicketRepository } from '../database/repositories/ticketRepository.js';
 import { LogSettingsRepository } from '../database/repositories/logSettingsRepository.js';
 import { isSendable } from '../utils/channels.js';
 import { createEmbed } from '../utils/embeds.js';
@@ -74,7 +75,15 @@ export async function sendModerationLog(
   return sendLogEvent(client, guildId, 'moderation', embed);
 }
 
-/** Sends a transcript file and its embed to the moderation/log channel. */
+/** Whether a closed ticket's transcript has anywhere configured to go (besides the database). */
+export function hasTranscriptDestination(client: PanClient, guildId: string): boolean {
+  const archive = new TicketRepository(client.db.sqlite).getSettings(guildId).archiveChannelId;
+  const settings = new GuildSettingsRepository(client.db.sqlite).get(guildId);
+  const logSetting = new LogSettingsRepository(client.db.sqlite).get(guildId, 'ticket');
+  return Boolean(archive || settings.modLogChannelId || logSetting.channelId);
+}
+
+/** Sends a transcript file to the ticket archive channel, falling back to the log channels. */
 export async function sendTicketTranscript(
   client: PanClient,
   guildId: string,
@@ -84,6 +93,12 @@ export async function sendTicketTranscript(
 ): Promise<boolean> {
   const settings = new GuildSettingsRepository(client.db.sqlite).get(guildId);
   const files = [{ name: fileName, attachment: Buffer.from(transcript, 'utf8') }];
+  const archiveChannelId = new TicketRepository(client.db.sqlite).getSettings(
+    guildId,
+  ).archiveChannelId;
+  if (archiveChannelId && (await sendToChannel(client, archiveChannelId, embed, files))) {
+    return true;
+  }
   if (
     settings.modLogChannelId &&
     (await sendToChannel(client, settings.modLogChannelId, embed, files))

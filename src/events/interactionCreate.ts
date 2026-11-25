@@ -1,8 +1,15 @@
 import { Collection, Events, MessageFlags, type Interaction } from 'discord.js';
 import type { PanClient } from '../core/client.js';
 import { logger } from '../core/logger.js';
-import { claimTicket, closeTicket, createTopicModal, openTicket } from '../tickets/service.js';
 import {
+  acceptTicket,
+  claimTicket,
+  closeTicket,
+  createTopicModal,
+  openTicket,
+} from '../tickets/service.js';
+import {
+  TICKET_ACCEPT,
   TICKET_CLAIM,
   TICKET_CLOSE,
   TICKET_CREATE,
@@ -66,6 +73,10 @@ const event: BotEvent = {
       try {
         if (interaction.customId === TICKET_CREATE) {
           await interaction.showModal(createTopicModal());
+          return;
+        }
+        if (interaction.customId === TICKET_ACCEPT) {
+          await acceptTicket(client, interaction);
           return;
         }
         if (interaction.customId === TICKET_CLAIM) {
